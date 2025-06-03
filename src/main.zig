@@ -2,36 +2,24 @@ const std = @import("std");
 const gl = @import("gl");
 const glfw = @import("glfw");
 
+const process = std.process;
+
+const Window = @import("Window.zig");
+
+const log = std.log.scoped(.core);
+
 var glProc: gl.ProcTable = undefined;
 
 pub fn main() !void {
-    var major: i32 = 0;
-    var minor: i32 = 0;
-    var rev: i32 = 0;
+    const window = Window.init("Playengine", 800, 600, true) catch |err| {
+        log.err("Failed to create window: {}", .{err});
+        process.exit(1);
+    };
+    defer window.deinit();
 
-    glfw.getVersion(&major, &minor, &rev);
-    std.debug.print("GLFW version {d}.{d}.{d}\n", .{ major, minor, rev });
-
-    try glfw.init();
-    defer glfw.terminate();
-    std.debug.print("GLFW initialized\n", .{});
-
-    const window = try glfw.createWindow(800, 640, "Playengine", null, null);
-    defer glfw.destroyWindow(window);
-
-    std.debug.print("GLFW window created\n", .{});
-
-    glfw.makeContextCurrent(window);
-    defer glfw.makeContextCurrent(null);
-
-    if (!glProc.init(glfw.getProcAddress)) return error.GLInitFailed;
-
-    gl.makeProcTableCurrent(&glProc);
-    defer gl.makeProcTableCurrent(null);
-
-    while (!glfw.windowShouldClose(window)) {
+    while (!window.shouldClose()) {
         if (glfw.getKey(window, glfw.KeyEscape) == glfw.Press) {
-            glfw.setWindowShouldClose(window, true);
+            window.setShouldClose(true);
         }
 
         gl.ClearColor(0.2, 0.3, 0.3, 1.0);
