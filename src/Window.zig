@@ -4,13 +4,27 @@ const core = @import("core.zig");
 
 const Self = @This();
 
-title: []const u8,
+var glfw_initialized: bool = false;
+
+title: [:0]const u8,
 width: u32,
 height: u32,
 handle: *glfw.Window,
 
-pub fn init(title: []const u8, width: u32, height: u32, current: bool) !Self {
-    const handle = try glfw.createWindow(width, height, title, null, null);
+fn glfwInit() !void {
+    if (glfw_initialized) return;
+    try glfw.init();
+    glfw.windowHint(glfw.ContextVersionMajor, 4);
+    glfw.windowHint(glfw.ContextVersionMinor, 6);
+    glfw.windowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile);
+
+    glfw_initialized = true;
+}
+
+pub fn init(title: [:0]const u8, width: u32, height: u32, current: bool) !Self {
+    try glfwInit();
+
+    const handle = try glfw.createWindow(@intCast(width), @intCast(height), title, null, null);
     if (current) glfw.makeContextCurrent(handle);
 
     try core.initOpenGL();

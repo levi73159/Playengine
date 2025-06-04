@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
 
     const gl_bindings = @import("zigglgen").generateBindingsModule(b, .{
         .api = .gl,
-        .version = .@"4.1",
+        .version = .@"4.6",
         .profile = .core,
     });
 
