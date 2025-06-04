@@ -7,6 +7,7 @@ var id_bound: u32 = 0;
 
 id: u32,
 count: i32,
+ty: u32,
 
 pub fn init(comptime T: type, datav: []const T) Self {
     var id: u32 = undefined;
@@ -19,6 +20,13 @@ pub fn init(comptime T: type, datav: []const T) Self {
     return Self{
         .id = id,
         .count = @intCast(datav.len),
+
+        .ty = switch (T) {
+            u8 => gl.UNSIGNED_BYTE,
+            u16 => gl.UNSIGNED_SHORT,
+            u32 => gl.UNSIGNED_INT,
+            else => @compileError("Unsupported index buffer type"),
+        },
     };
 }
 

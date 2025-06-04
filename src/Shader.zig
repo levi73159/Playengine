@@ -5,6 +5,8 @@ const builtin = @import("builtin");
 
 const Self = @This();
 
+var id_bound: u32 = 0;
+
 id: u32,
 
 fn compile(src: []const u8, shader_type: gl.@"enum") !u32 {
@@ -67,5 +69,7 @@ pub fn deinit(self: Self) void {
 }
 
 pub fn use(self: Self) void {
+    if (self.id == id_bound) return;
     gl.UseProgram(self.id);
+    id_bound = self.id;
 }

@@ -15,6 +15,10 @@ const VertexArray = buf.VertexArray;
 const IndexBuffer = buf.IndexBuffer;
 const Layout = buf.BufferLayout;
 
+const renderer = @import("renderer.zig");
+const Color = @import("Color.zig");
+const Object = @import("Object.zig");
+
 pub fn main() !u8 {
     var dbg = std.heap.DebugAllocator(.{}).init;
     defer _ = dbg.deinit();
@@ -65,15 +69,19 @@ pub fn main() !u8 {
 
     shader.use();
 
+    const obj = Object{
+        .vertex_array = va,
+        .vertex_buffer = buffer,
+        .index_buffer = index_buffer,
+    };
+
     while (!window.shouldClose()) {
         if (glfw.getKey(window.handle, glfw.KeyEscape) == glfw.Press) {
             window.setShouldClose(true);
         }
 
-        gl.ClearColor(0.2, 0.3, 0.3, 1.0);
-        gl.Clear(gl.COLOR_BUFFER_BIT);
-
-        gl.DrawElements(gl.TRIANGLES, index_buffer.count, gl.UNSIGNED_BYTE, 0);
+        renderer.clear(Color.init(0.2, 0.3, 0.3, 1.0));
+        renderer.render(obj, null); // no need to pass in shader because it's already bound
 
         window.swapBuffers();
         Window.pollEvents();
