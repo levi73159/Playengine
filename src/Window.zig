@@ -18,6 +18,8 @@ fn glfwInit() !void {
     glfw.windowHint(glfw.ContextVersionMinor, 6);
     glfw.windowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile);
 
+    glfw.windowHint(glfw.Resizable, 0);
+
     glfw_initialized = true;
 }
 
