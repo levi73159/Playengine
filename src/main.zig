@@ -18,6 +18,7 @@ const Layout = buf.BufferLayout;
 const renderer = @import("renderer.zig");
 const Color = @import("Color.zig");
 const Object = @import("Object.zig");
+const Texture = @import("Texture.zig");
 
 pub fn main() !u8 {
     var dbg = std.heap.DebugAllocator(.{}).init;
@@ -32,11 +33,12 @@ pub fn main() !u8 {
     defer window.deinit();
 
     // zig fmt: off
-    const vertices: [2 * 4]f32 = .{ 
-        -0.5, -0.5,
-        0.5, -0.5,
-        0.5, 0.5,
-        -0.5, 0.5
+    // square: xy, texture coords
+    const vertices: [4 * 4]f32 = .{ 
+        -0.5, -0.5, 0.0, 0.0,
+        0.5, -0.5, 1.0, 0.0,
+        0.5, 0.5, 1.0, 1.0,
+        -0.5, 0.5, 0.0, 1.0
     };
 
     const indices: [6]u8 = .{
@@ -46,6 +48,7 @@ pub fn main() !u8 {
     // zig fmt: on
 
     var va = VertexArray.init(try Layout.initFromSlice(allocator, &.{
+        .{ .ty = .float, .count = 2, .normalized = false },
         .{ .ty = .float, .count = 2, .normalized = false },
     }));
     defer va.deinit();
@@ -61,13 +64,22 @@ pub fn main() !u8 {
 
     index_buffer.bind();
 
-    const shader = Shader.init(@embedFile("shaders/vertex.glsl"), @embedFile("shaders/fragment.glsl")) catch |err| {
+    var shader = Shader.init(allocator, @embedFile("shaders/vertex.glsl"), @embedFile("shaders/fragment.glsl")) catch |err| {
         log.err("Failed to create shader: {}", .{err});
         return 1;
     };
     defer shader.deinit();
 
     shader.use();
+
+    var texture = Texture.loadFromFile(allocator, "res/logo.png") catch |err| {
+        log.err("Failed to load texture: {}", .{err});
+        return 1;
+    };
+    defer texture.deinit();
+    texture.bind(0);
+
+    try shader.setTexture("u_Texture", texture);
 
     const obj = Object{
         .vertex_array = va,
@@ -76,11 +88,9 @@ pub fn main() !u8 {
     };
 
     while (!window.shouldClose()) {
-        if (glfw.getKey(window.handle, glfw.KeyEscape) == glfw.Press) {
-            window.setShouldClose(true);
-        }
-
         renderer.clear(Color.init(0.2, 0.3, 0.3, 1.0));
+
+        try shader.setColor("u_Color", Color.white);
         renderer.render(obj, null); // no need to pass in shader because it's already bound
 
         window.swapBuffers();

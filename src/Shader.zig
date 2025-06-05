@@ -6,8 +6,10 @@ const builtin = @import("builtin");
 const Self = @This();
 
 var id_bound: u32 = 0;
+const not_found_warn: bool = true; // if false, warn when uniform is not found, if true, returns an error
 
 id: u32,
+cached_uniform_locations: std.StringHashMap(i32),
 
 fn compile(src: []const u8, shader_type: gl.@"enum") !u32 {
     const id = gl.CreateShader(shader_type);
@@ -39,7 +41,7 @@ fn compile(src: []const u8, shader_type: gl.@"enum") !u32 {
     return id;
 }
 
-pub fn init(vertex_src: []const u8, fragment_src: []const u8) !Self {
+pub fn init(allocator: std.mem.Allocator, vertex_src: []const u8, fragment_src: []const u8) !Self {
     const vertex_id = try compile(vertex_src, gl.VERTEX_SHADER);
     defer gl.DeleteShader(vertex_id);
 
@@ -61,10 +63,12 @@ pub fn init(vertex_src: []const u8, fragment_src: []const u8) !Self {
 
     return Self{
         .id = program_id,
+        .cached_uniform_locations = std.StringHashMap(i32).init(allocator),
     };
 }
 
-pub fn deinit(self: Self) void {
+pub fn deinit(self: *Self) void {
+    self.cached_uniform_locations.deinit();
     gl.DeleteProgram(self.id);
 }
 
@@ -72,4 +76,50 @@ pub fn use(self: Self) void {
     if (self.id == id_bound) return;
     gl.UseProgram(self.id);
     id_bound = self.id;
+}
+
+const SetUniformError = error{UniformNotFound};
+
+fn getUniformLocation(self: *Self, name: [:0]const u8) SetUniformError!i32 {
+    if (self.cached_uniform_locations.get(name)) |location|
+        return location;
+
+    const location = gl.GetUniformLocation(self.id, name);
+    if (location == -1) {
+        if (!not_found_warn) return error.UniformNotFound;
+        std.log.warn("Uniform not found: {s}", .{name});
+    }
+
+    self.cached_uniform_locations.put(name, location) catch unreachable;
+    return location;
+}
+
+pub fn setColor(self: *Self, name: [:0]const u8, color: @import("Color.zig")) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    gl.Uniform4f(location, color.r, color.g, color.b, color.a);
+}
+
+pub fn setFloat(self: *Self, name: [:0]const u8, value: f32) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    gl.Uniform1f(location, value);
+}
+
+pub fn setInt(self: *Self, name: [:0]const u8, value: i32) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    gl.Uniform1i(location, value);
+}
+
+/// Note: texture must be bound otherwise it will revert back to slot 0
+pub fn setTexture(self: *Self, name: [:0]const u8, texture: @import("Texture.zig")) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    if (texture.bound_slot == null) std.log.warn("Cannot get bound slot from texture: {s}", .{texture.path});
+    gl.Uniform1i(location, @intCast(texture.bound_slot orelse 0));
 }

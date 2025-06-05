@@ -22,8 +22,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const zigimg_dep = b.dependency("zigimg", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     exe.root_module.addImport("gl", gl_bindings);
     exe.root_module.addImport("glfw", glfw_dep.module("glfw"));
+    exe.root_module.addImport("zigimg", zigimg_dep.module("zigimg"));
 
     b.installArtifact(exe);
 
