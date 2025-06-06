@@ -7,9 +7,11 @@ const Color = @import("Color.zig");
 const Object = @import("Object.zig");
 const Shader = @import("Shader.zig");
 const Window = @import("Window.zig");
+const Camera = @import("Camera.zig");
 const builtin = @import("builtin");
 
 var procs: gl.ProcTable = undefined;
+var renderer_window: *const Window = undefined;
 
 fn messageCallback(
     source: gl.@"enum",
@@ -59,6 +61,8 @@ pub fn init(window: *const Window) !void {
 
     gl.Viewport(0, 0, @intCast(window.info.width), @intCast(window.info.height));
     Window.registerFrameBufferSizeCallback(&framebufferSizeCallback);
+
+    renderer_window = window;
 }
 
 fn framebufferSizeCallback(width: u32, height: u32) void {
@@ -70,12 +74,17 @@ pub fn clear(color: Color) void {
     gl.Clear(gl.COLOR_BUFFER_BIT);
 }
 
-pub fn render(obj: Object, shader: ?Shader) void {
+pub fn render(obj: Object, camera: Camera, shader: ?*Shader) void {
     obj.vertex_array.bind();
     obj.vertex_buffer.bind();
     obj.index_buffer.bind();
 
-    if (shader) |s| s.use();
+    if (shader) |s| {
+        s.use();
+        s.setMat4("u_MVP", renderer_window.getProj()
+            .mul(camera.getMat4())
+            .mul(obj.transform.getMat4())) catch {};
+    }
 
     gl.DrawElements(gl.TRIANGLES, obj.index_buffer.count, obj.index_buffer.ty, 0);
 }

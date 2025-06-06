@@ -16,5 +16,5 @@ pub fn init(pos: za.Vec2, rotation: f32, zoom: f32) Self {
 }
 
 pub fn getMat4(self: Self) za.Mat4 {
-    return za.Mat4.fromRotation(self.rotation, za.Vec3.new(0, 0, 1)).translate(self.pos.toVec3(0)).scale(za.Vec3.new(self.zoom, self.zoom, 1));
+    return za.Mat4.fromRotation(self.rotation, za.Vec3.new(0, 0, 1)).translate(self.pos.negate().toVec3(0)).scale(za.Vec3.new(self.zoom, self.zoom, 1));
 }

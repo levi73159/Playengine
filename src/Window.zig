@@ -3,6 +3,7 @@ const glfw = @import("glfw");
 const core = @import("core.zig");
 const za = @import("zalgebra");
 
+const Input = @import("Input.zig");
 const Bounds = @import("Bounds.zig");
 
 const Self = @This();
@@ -78,6 +79,14 @@ pub fn init(allocator: std.mem.Allocator, params: WindowParams) !Self {
 
 pub fn makeCurrent(self: Self) void {
     glfw.makeContextCurrent(self.handle);
+}
+
+pub fn getProj(self: Self) *const za.Mat4 {
+    return &self.info.proj;
+}
+
+pub fn input(self: Self) Input {
+    return Input{ .handle = self.handle };
 }
 
 pub fn deinit(self: Self) void {

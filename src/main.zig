@@ -97,44 +97,44 @@ pub fn main() !u8 {
     try shader.setTexture("u_Texture", texture);
     try shader.setColor("u_Color", Color.white);
 
+    const input = window.input();
     while (!window.shouldClose()) {
         renderer.clear(Color.init(0.2, 0.3, 0.3, 1.0));
 
-        if (glfw.getKey(window.handle, glfw.KeyEscape) == glfw.Press) {
+        if (input.getKeyPress(.escape)) {
             window.setShouldClose(true);
         }
 
-        if (glfw.getKey(window.handle, glfw.KeyW) == glfw.Press) {
+        if (input.getKeyPress(.w)) {
             camera.pos.yMut().* += 1.0;
         }
-        if (glfw.getKey(window.handle, glfw.KeyS) == glfw.Press) {
+        if (input.getKeyPress(.s)) {
             camera.pos.yMut().* -= 1.0;
         }
-        if (glfw.getKey(window.handle, glfw.KeyA) == glfw.Press) {
+        if (input.getKeyPress(.a)) {
             camera.pos.xMut().* -= 1.0;
         }
-        if (glfw.getKey(window.handle, glfw.KeyD) == glfw.Press) {
+        if (input.getKeyPress(.d)) {
             camera.pos.xMut().* += 1.0;
         }
 
-        if (glfw.getKey(window.handle, glfw.KeyQ) == glfw.Press) {
+        if (input.getKeyPress(.left)) {
             camera.rotation += 0.1;
-        } else if (glfw.getKey(window.handle, glfw.KeyE) == glfw.Press) {
+        } else if (input.getKeyPress(.right)) {
             camera.rotation -= 0.1;
         }
 
-        if (glfw.getKey(window.handle, glfw.KeyC) == glfw.Press) {
+        if (input.getKeyPress(.r)) {
             obj.transform.pos = za.Vec2.zero();
         }
 
-        if (glfw.getKey(window.handle, glfw.KeyEqual) == glfw.Press) {
+        if (input.getKeyPress(.equal)) {
             camera.zoom += 0.1;
-        } else if (glfw.getKey(window.handle, glfw.KeyMinus) == glfw.Press) {
+        } else if (input.getKeyPress(.minus)) {
             camera.zoom -= 0.1;
         }
 
-        try shader.setMat4("u_MVP", window.info.proj.mul(camera.getMat4()).mul(obj.transform.getMat4()));
-        renderer.render(obj, null); // no need to pass in shader because it's already bound
+        renderer.render(obj, camera, &shader); // no need to pass in shader because it's already bound
 
         window.swapBuffers();
         Window.pollEvents();
