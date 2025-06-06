@@ -3,17 +3,27 @@ const glfw = @import("glfw");
 const core = @import("core.zig");
 const za = @import("zalgebra");
 
+const Bounds = @import("Bounds.zig");
+
 const Self = @This();
 
 var glfw_initialized: bool = false;
 
 const log = std.log.scoped(.window);
 
-const Info = struct {
+pub const Info = struct {
     title: [:0]const u8,
     width: u32,
     height: u32,
     proj: za.Mat4,
+};
+
+pub const WindowParams = struct {
+    title: [:0]const u8,
+    width: u32,
+    height: u32,
+    current: bool = true,
+    resizable: bool = false,
 };
 
 info: *Info,
@@ -23,7 +33,11 @@ allocator: std.mem.Allocator,
 fn calcProj(width: u32, height: u32) za.Mat4 {
     const fwidth: f32 = @floatFromInt(width);
     const fheight: f32 = @floatFromInt(height);
-    return za.Mat4.orthographic(0, fwidth, 0, fheight, -1, 1);
+    return za.Mat4.orthographic(-fwidth / 2, fwidth / 2, -fheight / 2, fheight / 2, -1, 1);
+}
+
+fn glfwErrorCallback(error_code: glfw.ErrorCode, description: [*:0]const u8) callconv(.C) void {
+    log.err("GLFW error ({d}): {s}", .{ error_code, description });
 }
 
 fn glfwInit() !void {
@@ -32,22 +46,25 @@ fn glfwInit() !void {
     glfw.windowHint(glfw.ContextVersionMajor, 4);
     glfw.windowHint(glfw.ContextVersionMinor, 6);
     glfw.windowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile);
+    _ = glfw.setErrorCallback(&glfwErrorCallback);
 
     glfw_initialized = true;
 }
 
-pub fn init(allocator: std.mem.Allocator, title: [:0]const u8, width: u32, height: u32, current: bool) !Self {
+pub fn init(allocator: std.mem.Allocator, params: WindowParams) !Self {
     try glfwInit();
 
-    const handle = try glfw.createWindow(@intCast(width), @intCast(height), title, null, null);
-    if (current) glfw.makeContextCurrent(handle);
+    glfw.windowHint(glfw.Resizable, @intFromBool(params.resizable));
+
+    const handle = try glfw.createWindow(@intCast(params.width), @intCast(params.height), params.title, null, null);
+    if (params.current) glfw.makeContextCurrent(handle);
 
     const info = try allocator.create(Info);
     info.* = .{
-        .title = title,
-        .width = width,
-        .height = height,
-        .proj = calcProj(@intCast(width), @intCast(height)),
+        .title = params.title,
+        .width = params.width,
+        .height = params.height,
+        .proj = calcProj(@intCast(params.width), @intCast(params.height)),
     };
 
     glfw.setWindowUserPointer(handle, info);
@@ -84,10 +101,8 @@ pub fn setShouldClose(self: Self, value: bool) void {
     glfw.setWindowShouldClose(self.handle, value);
 }
 
-pub fn getCenter(self: Self) za.Vec2 {
-    const fwidth: f32 = @floatFromInt(self.info.width);
-    const fheight: f32 = @floatFromInt(self.info.height);
-    return za.Vec2.new(fwidth / 2, fheight / 2);
+pub fn getBounds(self: Self) Bounds {
+    return Bounds.init(0.0, 0.0, @floatFromInt(self.info.width), @floatFromInt(self.info.height));
 }
 
 const FrameBufferSizeFn = *const fn (width: u32, height: u32) void;

@@ -17,6 +17,7 @@ const Shader = @import("Shader.zig");
 const Color = @import("Color.zig");
 const Object = @import("Object.zig");
 const Texture = @import("Texture.zig");
+const Camera = @import("Camera.zig");
 
 const log = std.log.scoped(.core);
 
@@ -26,7 +27,7 @@ pub fn main() !u8 {
 
     const allocator = dbg.allocator();
 
-    const window = Window.init(allocator, "Playengine", 800, 600, true) catch |err| {
+    const window = Window.init(allocator, .{ .title = "Playengine", .width = 800, .height = 600 }) catch |err| {
         log.err("Failed to create window: {}", .{err});
         return 1;
     };
@@ -88,8 +89,10 @@ pub fn main() !u8 {
         .vertex_array = va,
         .vertex_buffer = buffer,
         .index_buffer = index_buffer,
-        .transform = .{ .pos = window.getCenter(), .scale = za.Vec2.new(200, 200) },
+        .transform = .{ .pos = za.Vec2.zero(), .scale = za.Vec2.new(200, 200) },
     };
+
+    var camera = Camera{};
 
     try shader.setTexture("u_Texture", texture);
     try shader.setColor("u_Color", Color.white);
@@ -102,23 +105,35 @@ pub fn main() !u8 {
         }
 
         if (glfw.getKey(window.handle, glfw.KeyW) == glfw.Press) {
-            obj.transform.pos.yMut().* += 1.0;
+            camera.pos.yMut().* += 1.0;
         }
         if (glfw.getKey(window.handle, glfw.KeyS) == glfw.Press) {
-            obj.transform.pos.yMut().* -= 1.0;
+            camera.pos.yMut().* -= 1.0;
         }
         if (glfw.getKey(window.handle, glfw.KeyA) == glfw.Press) {
-            obj.transform.pos.xMut().* -= 1.0;
+            camera.pos.xMut().* -= 1.0;
         }
         if (glfw.getKey(window.handle, glfw.KeyD) == glfw.Press) {
-            obj.transform.pos.xMut().* += 1.0;
+            camera.pos.xMut().* += 1.0;
+        }
+
+        if (glfw.getKey(window.handle, glfw.KeyQ) == glfw.Press) {
+            camera.rotation += 0.1;
+        } else if (glfw.getKey(window.handle, glfw.KeyE) == glfw.Press) {
+            camera.rotation -= 0.1;
         }
 
         if (glfw.getKey(window.handle, glfw.KeyC) == glfw.Press) {
-            obj.transform.pos = window.getCenter();
+            obj.transform.pos = za.Vec2.zero();
         }
 
-        try shader.setMat4("u_MVP", window.info.proj.mul(obj.transform.getMat4()));
+        if (glfw.getKey(window.handle, glfw.KeyEqual) == glfw.Press) {
+            camera.zoom += 0.1;
+        } else if (glfw.getKey(window.handle, glfw.KeyMinus) == glfw.Press) {
+            camera.zoom -= 0.1;
+        }
+
+        try shader.setMat4("u_MVP", window.info.proj.mul(camera.getMat4()).mul(obj.transform.getMat4()));
         renderer.render(obj, null); // no need to pass in shader because it's already bound
 
         window.swapBuffers();
