@@ -27,9 +27,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const zalgebra_dep = b.dependency("zalgebra", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     exe.root_module.addImport("gl", gl_bindings);
     exe.root_module.addImport("glfw", glfw_dep.module("glfw"));
     exe.root_module.addImport("zigimg", zigimg_dep.module("zigimg"));
+    exe.root_module.addImport("zalgebra", zalgebra_dep.module("zalgebra"));
 
     b.installArtifact(exe);
 

@@ -5,7 +5,9 @@ layout(location = 1) in vec2 aTextCoord;
 
 out vec2 vTextCoord;
 
+uniform mat4 u_MVP;
+
 void main() {
     vTextCoord = aTextCoord;
-    gl_Position = aPos;
+    gl_Position = aPos * u_MVP;
 }

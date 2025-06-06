@@ -1,7 +1,8 @@
 const std = @import("std");
-const gl = @import("gl");
-
 const builtin = @import("builtin");
+
+const gl = @import("gl");
+const za = @import("zalgebra");
 
 const Self = @This();
 
@@ -122,4 +123,11 @@ pub fn setTexture(self: *Self, name: [:0]const u8, texture: @import("Texture.zig
     const location = try self.getUniformLocation(name);
     if (texture.bound_slot == null) std.log.warn("Cannot get bound slot from texture: {s}", .{texture.path});
     gl.Uniform1i(location, @intCast(texture.bound_slot orelse 0));
+}
+
+pub fn setMat4(self: *Self, name: [:0]const u8, mat: za.Mat4) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    gl.UniformMatrix4fv(location, 1, gl.TRUE, @ptrCast(&mat.data));
 }

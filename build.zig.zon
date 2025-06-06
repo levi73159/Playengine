@@ -48,6 +48,10 @@
             .url = "git+https://github.com/zigimg/zigimg.git#7144f698850afd968fa87e04b95343d819912a33",
             .hash = "zigimg-0.1.0-8_eo2h6XEgAR6UkBiCtWECcml0gtx0oIXE3MX7sPCZof",
         },
+        .zalgebra = .{
+            .url = "git+https://github.com/kooparse/zalgebra.git#412c3e1cddcf6b8494a6c008dd152c6e0ec5e846",
+            .hash = "zalgebra-0.0.0-aaiVSk5nAQA4CIV_flm1iIpWiSrVcxggA9y_aaa-TtdR",
+        },
     },
     .paths = .{
         "build.zig",
