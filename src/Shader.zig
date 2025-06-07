@@ -68,6 +68,19 @@ pub fn init(allocator: std.mem.Allocator, vertex_src: []const u8, fragment_src: 
     };
 }
 
+// creates a new shader that is a basic textured shader with u_MVP and u_Texture and u_Color
+pub fn getTexturedShader(allocator: std.mem.Allocator) !Self {
+    const vertex_src = @embedFile("shaders/textured.vert");
+    const fragment_src = @embedFile("shaders/textured.frag");
+    return Self.init(allocator, vertex_src, fragment_src);
+}
+
+pub fn getColoredShader(allocator: std.mem.Allocator) !Self {
+    const vertex_src = @embedFile("shaders/colored.vert");
+    const fragment_src = @embedFile("shaders/colored.frag");
+    return Self.init(allocator, vertex_src, fragment_src);
+}
+
 pub fn deinit(self: *Self) void {
     self.cached_uniform_locations.deinit();
     gl.DeleteProgram(self.id);

@@ -37,46 +37,13 @@ pub fn main() !u8 {
         log.err("Failed to initialize renderer", .{});
         return 1;
     };
+    defer renderer.deinit();
 
-    // zig fmt: off
-    // square: xy, texture coords
-    const vertices: [4 * 4]f32 = .{ 
-        -0.5, -0.5, 0.0, 0.0,
-        0.5, -0.5, 1.0, 0.0,
-        0.5, 0.5, 1.0, 1.0,
-        -0.5, 0.5, 0.0, 1.0
-    };
+    var obj = try Object.createSquare();
+    obj.transform.scale = za.Vec2.new(200, 200);
 
-    const indices: [6]u8 = .{
-        0, 1, 2,
-        2, 3, 0
-    };
-    // zig fmt: on
-
-    var va = VertexArray.init(try Layout.initFromSlice(allocator, &.{
-        .{ .ty = .float, .count = 2, .normalized = false },
-        .{ .ty = .float, .count = 2, .normalized = false },
-    }));
-    defer va.deinit();
-    va.bind();
-
-    const buffer = ArrayBuffer.initWithData(f32, &vertices, .static);
-    defer buffer.deinit();
-
-    va.addBuffer(buffer);
-
-    const index_buffer = IndexBuffer.init(u8, &indices);
-    defer index_buffer.deinit();
-
-    index_buffer.bind();
-
-    var shader = Shader.init(allocator, @embedFile("shaders/vertex.glsl"), @embedFile("shaders/fragment.glsl")) catch |err| {
-        log.err("Failed to create shader: {}", .{err});
-        return 1;
-    };
+    var shader = try Shader.getTexturedShader(allocator);
     defer shader.deinit();
-
-    shader.use();
 
     var texture = Texture.loadFromFile(allocator, "res/image.png") catch |err| {
         log.err("Failed to load texture: {}", .{err});
@@ -84,13 +51,6 @@ pub fn main() !u8 {
     };
     defer texture.deinit();
     texture.bind(0);
-
-    var obj = Object{
-        .vertex_array = va,
-        .vertex_buffer = buffer,
-        .index_buffer = index_buffer,
-        .transform = .{ .pos = za.Vec2.zero(), .scale = za.Vec2.new(200, 200) },
-    };
 
     var camera = Camera{};
 

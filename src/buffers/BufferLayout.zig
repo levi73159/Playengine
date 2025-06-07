@@ -47,41 +47,29 @@ pub const Element = struct {
     normalized: bool,
 };
 
-elements: std.ArrayListUnmanaged(Element),
+pub const Layout = []const Element;
+
+pub const basic_layout: Layout = &[_]Element{
+    .{ .ty = .float, .count = 2, .normalized = false },
+};
+
+pub const texcords_layout: Layout = &[_]Element{
+    .{ .ty = .float, .count = 2, .normalized = false },
+    .{ .ty = .float, .count = 2, .normalized = false },
+};
+
+elements: Layout,
 stride: u32 = 0,
-allocator: std.mem.Allocator,
 
-pub fn init(allocator: std.mem.Allocator) Self {
-    return Self{
-        .elements = .{},
-        .allocator = allocator,
-    };
-}
-
-pub fn initFromSlice(allocator: std.mem.Allocator, elements: []const Element) !Self {
-    var self = init(allocator);
-    try self.elements.appendSlice(self.allocator, elements);
+pub fn init(elements: []const Element) !Self {
+    var self = Self{ .elements = elements };
     self.calculateStride();
     return self;
 }
 
 fn calculateStride(self: *Self) void {
     self.stride = 0;
-    for (self.elements.items) |element| {
+    for (self.elements) |element| {
         self.stride += element.count * element.ty.size();
     }
-}
-
-pub fn deinit(self: *Self) void {
-    self.elements.deinit(self.allocator);
-}
-
-pub fn add(self: *Self, comptime ty: type, count: u32, normalized: bool) !void {
-    try self.elements.append(self.allocator, .{
-        .count = count,
-        .ty = ElementType.fromType(ty),
-        .normalized = normalized,
-    });
-
-    self.stride += @sizeOf(ty) * count;
 }

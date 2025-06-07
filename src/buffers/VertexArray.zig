@@ -9,6 +9,7 @@ var id_bound: u32 = 0;
 
 id: u32,
 layout: Layout,
+bound_buffer: ?*u32 = null, // optional
 
 // the Vertex Array owns the layout
 pub fn init(layout: Layout) Self {
@@ -21,7 +22,6 @@ pub fn init(layout: Layout) Self {
 }
 
 pub fn deinit(self: *Self) void {
-    self.layout.deinit();
     gl.DeleteVertexArrays(1, @ptrCast(&self.id));
 }
 
@@ -31,12 +31,18 @@ pub fn bind(self: Self) void {
     id_bound = self.id;
 }
 
-pub fn addBuffer(self: Self, buffer: ArrayBuffer) void {
+pub fn bindBuffer(self: Self, buffer: ArrayBuffer) void {
     self.bind();
-    buffer.bind();
+    if (self.bound_buffer) |b| {
+        if (b.* == buffer.id) return;
+        buffer.bind();
+        b.* = buffer.id;
+    } else {
+        buffer.bind();
+    }
 
     var offset: u32 = 0;
-    for (self.layout.elements.items, 0..) |elem, i| {
+    for (self.layout.elements, 0..) |elem, i| {
         gl.EnableVertexAttribArray(@intCast(i));
         gl.VertexAttribPointer(@intCast(i), @intCast(elem.count), @intFromEnum(elem.ty), @intFromBool(elem.normalized), @intCast(self.layout.stride), offset);
 
