@@ -110,7 +110,7 @@ pub fn clear(color: Color) void {
 
 pub fn render(obj: Object, camera: Camera, shader: ?*Shader) void {
     const window_bounds = renderer_window.getBounds();
-    if (!window_bounds.collides(obj.getBounds())) return;
+    if (!window_bounds.overlaps(obj.getBounds())) return;
 
     const va = vertex_arrays.items[obj.id];
     va.bindBuffer(obj.vertex_buffer);

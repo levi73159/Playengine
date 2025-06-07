@@ -2,6 +2,7 @@ const std = @import("std");
 const buf = @import("buffer.zig");
 const Bounds = @import("Bounds.zig");
 const renderer = @import("renderer.zig");
+const za = @import("zalgebra");
 
 const Transform = @import("Transform.zig");
 
@@ -27,4 +28,12 @@ pub inline fn createSquare() !Self {
 
 pub inline fn createBasicSquare() !Self {
     return renderer.createBasicSquare(); // this is a renderer function but best accessed from here
+}
+
+pub inline fn collides(self: Self, other: Self) ?za.Vec2 {
+    return self.getBounds().collides(other.getBounds());
+}
+
+pub inline fn overlaps(self: Self, other: Self) bool {
+    return self.getBounds().overlaps(other.getBounds());
 }
