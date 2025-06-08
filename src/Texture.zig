@@ -12,7 +12,7 @@ height: u32,
 bpp: u32,
 allocator: std.mem.Allocator,
 
-bound_slot: ?u32 = 0,
+bound_slot: ?u32 = null,
 
 pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !Self {
     var id: u32 = undefined;

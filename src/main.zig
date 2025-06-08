@@ -41,32 +41,31 @@ pub fn main() !u8 {
     };
     defer renderer.deinit();
 
-    var player = try Object.createSquare();
-    player.transform.scale = za.Vec2.new(200, 200);
+    var texture = Texture.loadFromFile(allocator, "res/image.png") catch |err| {
+        log.err("Failed to load texture: {}", .{err});
+        return 1;
+    };
+    defer texture.deinit();
+    texture.bind(1);
 
-    var obsticle = try Object.createBasicSquare();
-    obsticle.transform.scale = za.Vec2.new(200, 100);
-    obsticle.transform.pos = za.Vec2.new(0, -200);
-
+    // ------------- SHADER INITIALIZATION -------------
+    // initialize the two basic shaders (that we will always use)
     var shader = try Shader.getTexturedShader(allocator);
     defer shader.deinit();
 
     var color_shader = try Shader.getColoredShader(allocator);
     defer color_shader.deinit();
 
-    var texture = Texture.loadFromFile(allocator, "res/image.png") catch |err| {
-        log.err("Failed to load texture: {}", .{err});
-        return 1;
-    };
-    defer texture.deinit();
-    texture.bind(0);
+    var player = try Object.createSquare("player", &shader);
+    player.transform.scale = za.Vec2.new(200, 200);
+    player.texture = &texture;
+
+    var obsticle = try Object.createBasicSquare("obsticle", &color_shader);
+    obsticle.transform.scale = za.Vec2.new(200, 100);
+    obsticle.transform.pos = za.Vec2.new(0, -200);
+    obsticle.color = Color.red;
 
     const camera = Camera{};
-
-    try shader.setTexture("u_Texture", texture);
-    try shader.setColor("u_Color", Color.white);
-
-    try color_shader.setColor("u_Color", Color.red);
 
     const input = window.input();
     const move_speed = 100.0;
@@ -74,6 +73,10 @@ pub fn main() !u8 {
         time.startFrame();
         const dt = time.delta();
         renderer.clear(Color.init(0.2, 0.3, 0.3, 1.0));
+
+        if (input.getKeyPress(.escape)) {
+            window.setShouldClose(true);
+        }
 
         var new_transform = player.transform;
         if (input.getKeyPress(.w)) {
@@ -94,8 +97,7 @@ pub fn main() !u8 {
             player.transform = new_transform;
         }
 
-        renderer.render(player, camera, &shader); // no need to pass in shader because it's already bound
-        renderer.render(obsticle, camera, &color_shader);
+        try renderer.renderAll(camera);
 
         window.swapBuffers();
         Window.pollEvents();

@@ -12,6 +12,17 @@ const not_found_warn: bool = true; // if false, warn when uniform is not found, 
 id: u32,
 cached_uniform_locations: std.StringHashMap(i32),
 
+pub const UniformValue = union(enum) {
+    float: f32,
+    int: i32,
+    vec2: za.Vec2,
+    vec3: za.Vec3,
+    vec4: za.Vec4,
+    color: @import("Color.zig"),
+    mat4: za.Mat4,
+    texture: struct { slot: ?u32 = 0, texture: *@import("Texture.zig") },
+};
+
 fn compile(src: []const u8, shader_type: gl.@"enum") !u32 {
     const id = gl.CreateShader(shader_type);
     gl.ShaderSource(id, 1, &.{src.ptr}, null);
@@ -108,6 +119,19 @@ fn getUniformLocation(self: *Self, name: [:0]const u8) SetUniformError!i32 {
     return location;
 }
 
+pub fn setUniform(self: *Self, name: [:0]const u8, value: UniformValue) SetUniformError!void {
+    return switch (value) {
+        .int => |v| self.setInt(name, v),
+        .float => |v| self.setFloat(name, v),
+        .vec2 => |v| self.setVec2(name, v),
+        .vec3 => |v| self.setVec3(name, v),
+        .vec4 => |v| self.setVec4(name, v),
+        .color => |v| self.setColor(name, v),
+        .mat4 => |v| self.setMat4(name, v),
+        .texture => |v| if (v.slot) |slot| self.setTextureAndBind(name, v.texture, slot) else self.setTexture(name, v.texture),
+    };
+}
+
 pub fn setColor(self: *Self, name: [:0]const u8, color: @import("Color.zig")) SetUniformError!void {
     self.use();
 
@@ -130,12 +154,38 @@ pub fn setInt(self: *Self, name: [:0]const u8, value: i32) SetUniformError!void 
 }
 
 /// Note: texture must be bound otherwise it will revert back to slot 0
-pub fn setTexture(self: *Self, name: [:0]const u8, texture: @import("Texture.zig")) SetUniformError!void {
+pub fn setTexture(self: *Self, name: [:0]const u8, texture: *const @import("Texture.zig")) SetUniformError!void {
     self.use();
 
     const location = try self.getUniformLocation(name);
     if (texture.bound_slot == null) std.log.warn("Cannot get bound slot from texture: {s}", .{texture.path});
     gl.Uniform1i(location, @intCast(texture.bound_slot orelse 0));
+}
+
+pub fn setTextureAndBind(self: *Self, name: [:0]const u8, texture: *@import("Texture.zig"), slot: u32) SetUniformError!void {
+    texture.bind(slot);
+    try self.setTexture(name, texture);
+}
+
+pub fn setVec2(self: *Self, name: [:0]const u8, vec: za.Vec2) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    gl.Uniform2f(location, vec.x(), vec.y());
+}
+
+pub fn setVec3(self: *Self, name: [:0]const u8, vec: za.Vec3) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    gl.Uniform3f(location, vec.x(), vec.y(), vec.z());
+}
+
+pub fn setVec4(self: *Self, name: [:0]const u8, vec: za.Vec4) SetUniformError!void {
+    self.use();
+
+    const location = try self.getUniformLocation(name);
+    gl.Uniform4f(location, vec.x(), vec.y(), vec.z(), vec.w());
 }
 
 pub fn setMat4(self: *Self, name: [:0]const u8, mat: za.Mat4) SetUniformError!void {

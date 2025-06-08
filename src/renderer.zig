@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const buf = @import("buffer.zig");
+const buffer = @import("buffer.zig");
 const gl = @import("gl");
 const za = @import("zalgebra");
 
@@ -15,11 +15,14 @@ var procs: gl.ProcTable = undefined;
 var renderer_window: *const Window = undefined;
 
 var allocator: std.mem.Allocator = undefined;
-var vertex_arrays: std.ArrayListUnmanaged(buf.VertexArray) = .{};
+var vertex_arrays: std.ArrayListUnmanaged(buffer.VertexArray) = .{};
 
 // difference between textured and colored is that in the vertex_buffers the textured square has texture coords
 var textured_square_object: ?Object = null; // predefined only when createSquare is called
 var colored_square_object: ?Object = null; // predefined only when createSquare is called
+
+var active_objects: std.ArrayListUnmanaged(*Object) = .{};
+var sorted: bool = false;
 
 fn messageCallback(
     source: gl.@"enum",
@@ -81,14 +84,20 @@ pub fn deinit() void {
     }
     vertex_arrays.deinit(allocator);
 
+    for (active_objects.items) |o| {
+        o.deinit();
+        allocator.destroy(o);
+    }
+    active_objects.deinit(allocator);
+
     if (textured_square_object) |*o| o.deinit();
     if (colored_square_object) |*o| o.deinit();
 }
 
-pub fn createVertexArray(layout: buf.BufferLayout.Layout) !u32 {
+pub fn createVertexArray(layout: buffer.BufferLayout.Layout) !u32 {
     const id = vertex_arrays.items.len;
     const vertex_array = try vertex_arrays.addOne(allocator);
-    vertex_array.* = buf.VertexArray.init(try buf.BufferLayout.init(layout));
+    vertex_array.* = buffer.VertexArray.init(try buffer.BufferLayout.init(layout));
     vertex_array.bound_buffer = try allocator.create(u32);
     vertex_array.bound_buffer.?.* = 0;
     vertex_array.bind();
@@ -108,7 +117,96 @@ pub fn clear(color: Color) void {
     gl.Clear(gl.COLOR_BUFFER_BIT);
 }
 
-pub fn render(obj: Object, camera: Camera, shader: ?*Shader) void {
+fn lessThen(_: void, a: *Object, b: *Object) bool {
+    return a.zindex < b.zindex;
+}
+
+fn sortObjects() void {
+    if (sorted) return; // already sorted
+    std.mem.sort(*Object, active_objects.items, {}, lessThen);
+    sorted = true;
+}
+
+// once added the object is owned by the renderer and deinit will be called when needed
+pub fn addObject(o: Object) !void {
+    const ptr = try allocator.create(Object);
+    ptr.* = o;
+    try active_objects.append(allocator, ptr);
+    sorted = false;
+}
+
+pub fn getObject(index: usize) *Object {
+    return &active_objects.items[index];
+}
+
+pub fn findObject(name: []const u8) ?*Object {
+    for (active_objects.items) |*o| {
+        if (std.mem.eql(u8, o.name, name)) return o;
+    }
+    return null;
+}
+
+// if you want to find all objects with a certain name
+// does not return pointers, if you want to have them return pointers use findObjectsMut
+pub fn findObjects(objbuf: []Object, name: []const u8) []Object {
+    var i: u32 = 0;
+    for (active_objects.items) |o| {
+        if (std.mem.eql(u8, o.name, name)) {
+            objbuf[i] = o;
+            i += 1;
+        }
+    }
+    return objbuf[0..i];
+}
+
+pub fn findObjectsMut(objbuf: []*Object, name: []const u8) []*Object {
+    var i: u32 = 0;
+    for (active_objects.items) |*o| {
+        if (std.mem.eql(u8, o.name, name)) {
+            objbuf[i] = o;
+            i += 1;
+        }
+    }
+    return objbuf[0..i];
+}
+
+// if we only want to find a limited number of objects (good for performance so we don't search the whole array)
+pub fn findObjectsLimited(objbuf: []Object, name: []const u8, limit: u32) u32 {
+    var i: u32 = 0;
+    for (active_objects.items) |o| {
+        if (std.mem.eql(u8, o.name, name)) {
+            objbuf[i] = o;
+            i += 1;
+            if (i == limit) return i;
+        }
+    }
+    return i;
+}
+
+pub fn findObjectsLimitedMut(objbuf: []*Object, name: []const u8, limit: u32) u32 {
+    var i: u32 = 0;
+    for (active_objects.items) |*o| {
+        if (std.mem.eql(u8, o.name, name)) {
+            objbuf[i] = o;
+            i += 1;
+            if (i == limit) return i;
+        }
+    }
+    return i;
+}
+
+pub fn renderAll(camera: Camera) !void {
+    if (active_objects.items.len == 0) return;
+    sortObjects(); // based on zindex
+
+    for (active_objects.items) |o| {
+        try renderObject(o, camera);
+    }
+}
+
+pub fn renderObject(obj: *const Object, camera: Camera) !void {
+    if (!obj.visible) return;
+
     const window_bounds = renderer_window.getBounds();
     if (!window_bounds.overlaps(obj.getBounds())) return;
 
@@ -116,19 +214,41 @@ pub fn render(obj: Object, camera: Camera, shader: ?*Shader) void {
     va.bindBuffer(obj.vertex_buffer);
     obj.index_buffer.bind();
 
-    if (shader) |s| {
-        s.use();
-        s.setMat4("u_MVP", renderer_window.getProj()
-            .mul(camera.getMat4())
-            .mul(obj.transform.getMat4())) catch {};
+    obj.shader.use();
+    obj.shader.setMat4("u_MVP", renderer_window.getProj()
+        .mul(camera.getMat4())
+        .mul(obj.transform.getMat4())) catch {};
+
+    obj.shader.setColor("u_Color", obj.color) catch {};
+
+    if (obj.texture) |texture| {
+        const slot = obj.texture_slot orelse texture.bound_slot orelse 0; // 0 is default texture slot
+        texture.bind(slot);
+        // instead of using catch {} on the error, if texture is not null, we gurantee that u_Texture is a valid uniform
+        try obj.shader.setTexture("u_Texture", texture);
+    }
+
+    var buf: [100]u8 = undefined;
+    for (obj.uniforms.keys(), obj.uniforms.values()) |name, value| {
+        // convert name ([]const u8) to ([:0]const u8)
+        if (name.len + 1 > buf.len) return error.BufferTooSmall;
+        @memcpy(buf[0..name.len], name);
+        buf[name.len] = 0;
+        try obj.shader.setUniform(buf[0 .. name.len + 1 :0], value);
     }
 
     gl.DrawElements(gl.TRIANGLES, obj.index_buffer.count, obj.index_buffer.ty, 0);
 }
 
-/// create a new textured square with the scale of 50x50
-pub fn createSquare() !Object {
-    if (textured_square_object) |o| return o;
+/// creates a basic square and add it to the active objects
+pub fn createSquare(name: []const u8, shader: *Shader) !*Object {
+    if (textured_square_object) |o| {
+        var cloned = try o.clone();
+        cloned.name = name;
+        const index = active_objects.items.len;
+        try addObject(cloned);
+        return active_objects.items[index];
+    }
     // zig fmt: off
     // square: xy, texture coords
     // square dimensions unscaled are -0.5 to 0.5 meaning a scale of 1 is 1x1 center based
@@ -145,22 +265,36 @@ pub fn createSquare() !Object {
     };
     // zig fmt: on
 
-    const vaid = try createVertexArray(buf.BufferLayout.texcords_layout);
+    const vaid = try createVertexArray(buffer.BufferLayout.texcords_layout);
 
-    const vertex_buffer = buf.ArrayBuffer.initWithData(f32, &vertices, .static);
-    const index_buffer = buf.IndexBuffer.init(u8, &indices);
+    const vertex_buffer = buffer.ArrayBuffer.initWithData(f32, &vertices, .static);
+    const index_buffer = buffer.IndexBuffer.init(u8, &indices);
 
     textured_square_object = Object{
         .id = vaid,
+        .name = name,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
         .transform = .{ .pos = za.Vec2.zero(), .scale = za.Vec2.new(50, 50) },
+        .color = Color.white,
+        .shader = shader,
+        .static = true,
+        .allocator = allocator,
     };
-    return textured_square_object.?;
+    const index = active_objects.items.len;
+    try addObject(textured_square_object.?);
+    return active_objects.items[index];
 }
 
-pub fn createBasicSquare() !Object {
-    if (colored_square_object) |o| return o;
+// creates basic square and adds it to the active objects
+pub fn createBasicSquare(name: []const u8, shader: *Shader) !*Object {
+    if (colored_square_object) |o| {
+        var cloned = try o.clone();
+        cloned.name = name;
+        const index = active_objects.items.len;
+        try addObject(cloned);
+        return active_objects.items[index];
+    }
     // zig fmt: off
     // square: xy
     const vertices: [2 * 4]f32 = .{ 
@@ -176,16 +310,23 @@ pub fn createBasicSquare() !Object {
     };
     // zig fmt: on
 
-    const vaid = try createVertexArray(buf.BufferLayout.basic_layout);
+    const vaid = try createVertexArray(buffer.BufferLayout.basic_layout);
 
-    const vertex_buffer = buf.ArrayBuffer.initWithData(f32, &vertices, .static);
-    const index_buffer = buf.IndexBuffer.init(u8, &indices);
+    const vertex_buffer = buffer.ArrayBuffer.initWithData(f32, &vertices, .static);
+    const index_buffer = buffer.IndexBuffer.init(u8, &indices);
 
     colored_square_object = Object{
+        .name = name,
         .id = vaid,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
         .transform = .{ .pos = za.Vec2.zero(), .scale = za.Vec2.new(50, 50) },
+        .color = Color.white,
+        .shader = shader,
+        .static = true,
+        .allocator = allocator,
     };
-    return colored_square_object.?;
+    const index = active_objects.items.len;
+    try addObject(colored_square_object.?);
+    return active_objects.items[index];
 }
