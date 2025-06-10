@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const buffer = @import("buffer.zig");
 const gl = @import("gl");
@@ -9,7 +10,44 @@ const Object = @import("Object.zig");
 const Shader = @import("Shader.zig");
 const Window = @import("Window.zig");
 const Camera = @import("Camera.zig");
-const builtin = @import("builtin");
+const Bounds = @import("Bounds.zig");
+const Transform = @import("Transform.zig");
+
+const Text = @import("Text.zig");
+const Font = @import("Font.zig");
+
+pub const RenderObject = union(enum) {
+    text: *Text,
+    object: *Object,
+
+    pub fn deinit(self: RenderObject) void {
+        switch (self) {
+            .text => {}, // text doesn't need deinit
+            .object => |o| o.deinit(),
+        }
+    }
+
+    pub fn destroy(self: RenderObject, a: std.mem.Allocator) void {
+        switch (self) {
+            .text => |t| a.destroy(t),
+            .object => |o| a.destroy(o),
+        }
+    }
+
+    pub fn getName(self: RenderObject) []const u8 {
+        switch (self) {
+            .text => |t| return t.text,
+            .object => |o| return o.name,
+        }
+    }
+
+    pub fn getTransform(self: RenderObject) *Transform {
+        switch (self) {
+            .text => |t| return &t.transform,
+            .object => |o| return &o.transform,
+        }
+    }
+};
 
 var procs: gl.ProcTable = undefined;
 var renderer_window: *const Window = undefined;
@@ -21,8 +59,13 @@ var vertex_arrays: std.ArrayListUnmanaged(buffer.VertexArray) = .{};
 var textured_square_object: ?Object = null; // predefined only when createSquare is called
 var colored_square_object: ?Object = null; // predefined only when createSquare is called
 
-var active_objects: std.ArrayListUnmanaged(*Object) = .{};
+var active_objects: std.ArrayListUnmanaged(RenderObject) = .{};
 var sorted: bool = false;
+
+var text_settings: struct {
+    font: ?*const Font = null,
+    color: Color = Color.white,
+} = .{};
 
 fn messageCallback(
     source: gl.@"enum",
@@ -77,6 +120,8 @@ pub fn init(window: *const Window) !void {
     allocator = renderer_window.allocator;
 }
 
+/// function to be called at the end of the program
+/// will deinit all resources owned by the renderer
 pub fn deinit() void {
     for (vertex_arrays.items) |*va| {
         allocator.destroy(va.bound_buffer.?);
@@ -86,12 +131,18 @@ pub fn deinit() void {
 
     for (active_objects.items) |o| {
         o.deinit();
-        allocator.destroy(o);
+        o.destroy(allocator);
     }
     active_objects.deinit(allocator);
 
     if (textured_square_object) |*o| o.deinit();
     if (colored_square_object) |*o| o.deinit();
+}
+
+/// function to be called at the end of the program
+/// will deinit all resourced used but not in the renderer
+pub fn deinitResources() void {
+    Text.deinitResources();
 }
 
 pub fn createVertexArray(layout: buffer.BufferLayout.Layout) !u32 {
@@ -117,13 +168,29 @@ pub fn clear(color: Color) void {
     gl.Clear(gl.COLOR_BUFFER_BIT);
 }
 
-fn lessThen(_: void, a: *Object, b: *Object) bool {
-    return a.zindex < b.zindex;
+fn lessThen(_: void, a: RenderObject, b: RenderObject) bool {
+    const zindex_a = switch (a) {
+        .object => |obj| obj.zindex,
+        .text => |text| blk: {
+            if (text.world_space) break :blk text.zindex;
+            return false; // to make sure the text is drawn last (because it is on top of everything else)
+        },
+    };
+
+    const zindex_b = switch (b) {
+        .object => |obj| obj.zindex,
+        .text => |text| blk: {
+            if (text.world_space) break :blk text.zindex;
+            return true; // to make sure the text is drawn last (because it is on top of everything else)
+        },
+    };
+
+    return zindex_a < zindex_b;
 }
 
 fn sortObjects() void {
     if (sorted) return; // already sorted
-    std.mem.sort(*Object, active_objects.items, {}, lessThen);
+    std.mem.sort(RenderObject, active_objects.items, {}, lessThen);
     sorted = true;
 }
 
@@ -131,38 +198,34 @@ fn sortObjects() void {
 pub fn addObject(o: Object) !void {
     const ptr = try allocator.create(Object);
     ptr.* = o;
-    try active_objects.append(allocator, ptr);
+    try active_objects.append(allocator, RenderObject{ .object = ptr });
     sorted = false;
 }
 
-pub fn getObject(index: usize) *Object {
+pub fn addText(t: Text) !void {
+    const ptr = try allocator.create(Text);
+    ptr.* = t;
+    try active_objects.append(allocator, RenderObject{ .text = ptr });
+    sorted = false;
+}
+
+pub fn getObject(index: usize) RenderObject {
     return &active_objects.items[index];
 }
 
-pub fn findObject(name: []const u8) ?*Object {
-    for (active_objects.items) |*o| {
-        if (std.mem.eql(u8, o.name, name)) return o;
+pub fn findObject(name: []const u8) ?RenderObject {
+    for (active_objects.items) |o| {
+        if (std.mem.eql(u8, o.getName(), name)) return o;
     }
     return null;
 }
 
 // if you want to find all objects with a certain name
 // does not return pointers, if you want to have them return pointers use findObjectsMut
-pub fn findObjects(objbuf: []Object, name: []const u8) []Object {
+pub fn findObjects(objbuf: []RenderObject, name: []const u8) []RenderObject {
     var i: u32 = 0;
     for (active_objects.items) |o| {
-        if (std.mem.eql(u8, o.name, name)) {
-            objbuf[i] = o;
-            i += 1;
-        }
-    }
-    return objbuf[0..i];
-}
-
-pub fn findObjectsMut(objbuf: []*Object, name: []const u8) []*Object {
-    var i: u32 = 0;
-    for (active_objects.items) |*o| {
-        if (std.mem.eql(u8, o.name, name)) {
+        if (std.mem.eql(u8, o.getName(), name)) {
             objbuf[i] = o;
             i += 1;
         }
@@ -171,10 +234,10 @@ pub fn findObjectsMut(objbuf: []*Object, name: []const u8) []*Object {
 }
 
 // if we only want to find a limited number of objects (good for performance so we don't search the whole array)
-pub fn findObjectsLimited(objbuf: []Object, name: []const u8, limit: u32) u32 {
+pub fn findObjectsLimited(objbuf: []RenderObject, name: []const u8, limit: u32) u32 {
     var i: u32 = 0;
     for (active_objects.items) |o| {
-        if (std.mem.eql(u8, o.name, name)) {
+        if (std.mem.eql(u8, o.getName(), name)) {
             objbuf[i] = o;
             i += 1;
             if (i == limit) return i;
@@ -183,16 +246,12 @@ pub fn findObjectsLimited(objbuf: []Object, name: []const u8, limit: u32) u32 {
     return i;
 }
 
-pub fn findObjectsLimitedMut(objbuf: []*Object, name: []const u8, limit: u32) u32 {
-    var i: u32 = 0;
-    for (active_objects.items) |*o| {
-        if (std.mem.eql(u8, o.name, name)) {
-            objbuf[i] = o;
-            i += 1;
-            if (i == limit) return i;
-        }
-    }
-    return i;
+pub fn setFont(f: *const Font) void {
+    text_settings.font = f;
+}
+
+pub fn setFontColor(color: Color) void {
+    text_settings.color = color;
 }
 
 pub fn renderAll(camera: Camera) !void {
@@ -200,8 +259,32 @@ pub fn renderAll(camera: Camera) !void {
     sortObjects(); // based on zindex
 
     for (active_objects.items) |o| {
-        try renderObject(o, camera);
+        switch (o) {
+            .text => |text| try renderTextObject(text, camera),
+            .object => |obj| try renderObject(obj, camera),
+        }
     }
+}
+
+pub fn renderTextObject(text: *const Text, camera: Camera) !void {
+    if (!text.canBeRendered()) return;
+
+    const mvp = if (text.world_space)
+        renderer_window.getProj()
+            .mul(camera.getMat4())
+            .mul(za.Mat4.fromTranslate(text.transform.pos.toVec3(0)))
+    else
+        renderer_window.getProj()
+            .mul(za.Mat4.fromTranslate(text.transform.pos.toVec3(0)));
+
+    try Text.getReadyForRendering(); // active texture and binds vertex array
+
+    text.shader.use();
+    text.shader.setColor("u_Color", text.color) catch {};
+    try text.shader.setMat4("u_MVP", mvp);
+    try text.shader.setInt("u_Texture", Text.Text_TextureSlot);
+
+    try drawText(text.text, text.font, text.scale, text.transform.pos);
 }
 
 pub fn renderObject(obj: *const Object, camera: Camera) !void {
@@ -240,6 +323,82 @@ pub fn renderObject(obj: *const Object, camera: Camera) !void {
     gl.DrawElements(gl.TRIANGLES, obj.index_buffer.count, obj.index_buffer.ty, 0);
 }
 
+pub fn renderText(text: []const u8, pos: za.Vec2, scale: f32, shader: *Shader) !void {
+    if (text.len == 0) return;
+    if (scale == 0) return;
+
+    const font = text_settings.font orelse {
+        std.log.warn("No font set", .{});
+        return;
+    };
+
+    const mvp = renderer_window.getProj().mul(za.Mat4.fromTranslate(pos.toVec3(0)));
+
+    try Text.getReadyForRendering();
+
+    shader.use();
+    shader.setColor("u_Color", text_settings.color) catch {};
+    shader.setMat4("u_MVP", mvp) catch {};
+    try shader.setInt("u_Texture", Text.Text_TextureSlot);
+
+    try drawText(text, font, scale, pos);
+}
+
+// must bind the vertex buffer and vertex array we using
+fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void {
+    const vertex_buffer = Text.getBuffer();
+    std.log.debug("Rendering text: {s}", .{text});
+
+    var x_offset: f32 = 0;
+    var y_offset: f32 = 0;
+    for (text) |c| {
+        const char = font.getCharacter(c) orelse {
+            std.log.warn("Failed to get character: {c}", .{c});
+            continue;
+        };
+
+        if (c == '\n') {
+            y_offset -= @as(f32, @floatFromInt(char.size[1])) * 1.3 * scale;
+            x_offset = 0;
+        } else if (c == ' ') {
+            x_offset += @as(f32, @floatFromInt(char.advance >> 6)) * scale;
+        } else {
+            const sizey: f32 = @floatFromInt(char.size[1]);
+            const bearingy: f32 = @floatFromInt(char.bearing[1]);
+            const bearingx: f32 = @floatFromInt(char.bearing[0]);
+
+            const xpos: f32 = x_offset + bearingx * scale;
+            const ypos: f32 = y_offset - (sizey - bearingy) * scale;
+
+            const w = @as(f32, @floatFromInt(char.size[0])) * scale;
+            const h = @as(f32, @floatFromInt(char.size[1])) * scale;
+
+            const bounds = Bounds{
+                .x = xpos + pos.x(),
+                .y = ypos + pos.y(),
+                .width = w,
+                .height = h,
+            };
+
+            defer x_offset += @as(f32, @floatFromInt(char.advance >> 6)) * scale;
+            if (!renderer_window.getBounds().overlaps(bounds)) continue;
+
+            const vertices: [Text.buffer_len]f32 = [_]f32{
+                xpos,     ypos + h, 0.0, 0.0,
+                xpos,     ypos,     0.0, 1.0,
+                xpos + w, ypos,     1.0, 1.0,
+                xpos,     ypos + h, 0.0, 0.0,
+                xpos + w, ypos,     1.0, 1.0,
+                xpos + w, ypos + h, 1.0, 0.0,
+            };
+
+            gl.BindTexture(gl.TEXTURE_2D, char.texture_id);
+            vertex_buffer.subData(f32, 0, &vertices);
+            gl.DrawArrays(gl.TRIANGLES, 0, 6);
+        }
+    }
+}
+
 /// creates a basic square and add it to the active objects
 pub fn createSquare(name: []const u8, shader: *Shader) !*Object {
     if (textured_square_object) |o| {
@@ -247,7 +406,7 @@ pub fn createSquare(name: []const u8, shader: *Shader) !*Object {
         cloned.name = name;
         const index = active_objects.items.len;
         try addObject(cloned);
-        return active_objects.items[index];
+        return active_objects.items[index].object;
     }
     // zig fmt: off
     // square: xy, texture coords
@@ -283,7 +442,7 @@ pub fn createSquare(name: []const u8, shader: *Shader) !*Object {
     };
     const index = active_objects.items.len;
     try addObject(textured_square_object.?);
-    return active_objects.items[index];
+    return active_objects.items[index].object;
 }
 
 // creates basic square and adds it to the active objects
@@ -293,7 +452,7 @@ pub fn createBasicSquare(name: []const u8, shader: *Shader) !*Object {
         cloned.name = name;
         const index = active_objects.items.len;
         try addObject(cloned);
-        return active_objects.items[index];
+        return active_objects.items[index].object;
     }
     // zig fmt: off
     // square: xy
@@ -328,5 +487,16 @@ pub fn createBasicSquare(name: []const u8, shader: *Shader) !*Object {
     };
     const index = active_objects.items.len;
     try addObject(colored_square_object.?);
-    return active_objects.items[index];
+    return active_objects.items[index].object;
+}
+
+pub fn createText(name: []const u8, text: []const u8, shader: *Shader, font: *const Font) !*Text {
+    const index = active_objects.items.len;
+    try addText(Text{
+        .name = name,
+        .text = text,
+        .shader = shader,
+        .font = font,
+    });
+    return active_objects.items[index].text;
 }

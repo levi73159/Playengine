@@ -19,9 +19,26 @@ const Color = @import("Color.zig");
 const Object = @import("Object.zig");
 const Texture = @import("Texture.zig");
 const Camera = @import("Camera.zig");
+const Text = @import("Text.zig");
 const Bounds = @import("Bounds.zig");
 
+const Font = @import("Font.zig");
+
 const log = std.log.scoped(.core);
+
+const c = @cImport({
+    @cInclude("ft2build.h");
+    @cInclude("freetype/freetype.h");
+});
+
+const Character = struct {
+    texture_id: u32,
+    size: za.Vec2_i32,
+    bearing: za.Vec2_i32,
+    advance: c_long,
+};
+
+const CharacterMap = std.AutoHashMap(u8, Character);
 
 pub fn main() !u8 {
     var dbg = std.heap.DebugAllocator(.{}).init;
@@ -41,7 +58,9 @@ pub fn main() !u8 {
     };
     defer renderer.deinit();
 
-    var texture = Texture.loadFromFile(allocator, "res/image.png") catch |err| {
+    renderer.deinitResources();
+
+    var texture = Texture.loadFromFile(allocator, "res/sprites/image.png") catch |err| {
         log.err("Failed to load texture: {}", .{err});
         return 1;
     };
@@ -50,11 +69,43 @@ pub fn main() !u8 {
 
     // ------------- SHADER INITIALIZATION -------------
     // initialize the two basic shaders (that we will always use)
-    var shader = try Shader.getTexturedShader(allocator);
+    var shader = Shader.getTexturedShader(allocator) catch |err| {
+        log.err("Failed to load textured shader: {}", .{err});
+        return 1;
+    };
     defer shader.deinit();
 
-    var color_shader = try Shader.getColoredShader(allocator);
+    var color_shader = Shader.getColoredShader(allocator) catch |err| {
+        log.err("Failed to load colored shader: {}", .{err});
+        return 1;
+    };
     defer color_shader.deinit();
+
+    var text_shader = Shader.init(allocator, @embedFile("shaders/text.vert"), @embedFile("shaders/text.frag")) catch |err| {
+        log.err("Failed to load text shader: {}", .{err});
+        return 1;
+    };
+    defer text_shader.deinit();
+
+    // ---- Font Initialization ----
+    var basic_font = Font.init(allocator, "res/fonts/Roboto.ttf", 48) catch |err| switch (err) {
+        error.OutOfMemory => {
+            std.log.err("Not enough memory to load font!!!!!!", .{});
+            return 255; // fatal bad error is 255
+        },
+        error.FailedToLoadFont => {
+            std.log.err("Failed to load font", .{});
+            return 1;
+        },
+        error.FailedToInitFreeType => {
+            std.log.err("Failed to init freetype", .{});
+            return 1;
+        },
+    };
+    defer basic_font.deinit();
+
+    renderer.setFont(&basic_font);
+    renderer.setFontColor(Color.white);
 
     var player = try Object.createSquare("player", &shader);
     player.transform.scale = za.Vec2.new(200, 200);
@@ -65,39 +116,27 @@ pub fn main() !u8 {
     obsticle.transform.pos = za.Vec2.new(0, -200);
     obsticle.color = Color.red;
 
+    var text = try Text.create("Text", "Game by levi", &text_shader, &basic_font);
+    text.transform.pos = window.getBounds().topLeft().add(za.Vec2.new(0, -10));
+    text.transform.scale = za.Vec2.new(100, 100);
+    text.color = Color.white;
+    text.scale = 1.0;
+
     const camera = Camera{};
 
     const input = window.input();
     const move_speed = 100.0;
+
+    _ = input;
+    _ = move_speed;
+
     while (!window.shouldClose()) {
-        time.startFrame();
-        const dt = time.delta();
         renderer.clear(Color.init(0.2, 0.3, 0.3, 1.0));
 
-        if (input.getKeyPress(.escape)) {
-            window.setShouldClose(true);
-        }
-
-        var new_transform = player.transform;
-        if (input.getKeyPress(.w)) {
-            new_transform.pos.yMut().* += move_speed * dt;
-        }
-        if (input.getKeyPress(.s)) {
-            new_transform.pos.yMut().* -= move_speed * dt;
-        }
-        if (input.getKeyPress(.a)) {
-            new_transform.pos.xMut().* -= move_speed * dt;
-        }
-        if (input.getKeyPress(.d)) {
-            new_transform.pos.xMut().* += move_speed * dt;
-        }
-
-        const bounds = Bounds.fromTransform(new_transform);
-        if (!bounds.overlaps(obsticle.getBounds())) {
-            player.transform = new_transform;
-        }
-
-        try renderer.renderAll(camera);
+        renderer.renderAll(camera) catch |err| {
+            log.err("Failed to render: {}", .{err});
+            return 1;
+        };
 
         window.swapBuffers();
         Window.pollEvents();

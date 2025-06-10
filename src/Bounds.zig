@@ -34,11 +34,11 @@ pub fn right(self: Self) f32 {
     return (self.width / 2.0) + self.x;
 }
 
-pub fn top(self: Self) f32 {
+pub fn bottom(self: Self) f32 {
     return (-self.height / 2.0) + self.y;
 }
 
-pub fn bottom(self: Self) f32 {
+pub fn top(self: Self) f32 {
     return (self.height / 2.0) + self.y;
 }
 
@@ -71,9 +71,9 @@ pub inline fn halfSize(self: Self) za.Vec2 {
 }
 
 pub fn contains(self: Self, pos: za.Vec2) bool {
-    return pos.x() >= self.left() and pos.x() <= self.right() and pos.y() >= self.top() and pos.y() <= self.bottom();
+    return pos.x() >= self.left() and pos.x() <= self.right() and pos.y() >= self.bottom() and pos.y() <= self.top();
 }
 
 pub fn overlaps(self: Self, other: Self) bool {
-    return self.left() < other.right() and self.right() > other.left() and self.top() < other.bottom() and self.bottom() > other.top();
+    return self.left() < other.right() and self.right() > other.left() and self.bottom() < other.top() and self.top() > other.bottom();
 }

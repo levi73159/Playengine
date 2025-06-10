@@ -52,13 +52,15 @@
             .url = "git+https://github.com/kooparse/zalgebra.git#412c3e1cddcf6b8494a6c008dd152c6e0ec5e846",
             .hash = "zalgebra-0.0.0-aaiVSk5nAQA4CIV_flm1iIpWiSrVcxggA9y_aaa-TtdR",
         },
+        .freetype = .{ .path = "vendor/freetype" },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "src",
-        // For example...
+        "src", // source code file
+        "res", // resource files
+        "vendor",
         //"LICENSE",
-        //"README.md",
+        "README.md",
     },
 }
