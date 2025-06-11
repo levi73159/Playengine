@@ -268,6 +268,14 @@ pub fn destroyObject(o: RenderObject) void {
     item.destroy(allocator);
 }
 
+pub fn destroyAll() void {
+    for (active_objects.items) |o| {
+        o.deinit();
+        o.destroy(allocator);
+    }
+    active_objects.clearAndFree(allocator);
+}
+
 pub fn setFont(f: *const Font) void {
     text_settings.font = f;
 }

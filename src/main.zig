@@ -133,20 +133,35 @@ pub fn main() !u8 {
 
     const camera = Camera{};
 
+    var game_over = false;
+
     while (!window.shouldClose()) {
         time.startFrame();
         const dt = time.delta();
         renderer.clear(Color.init(0.2, 0.3, 0.3, 1.0));
 
-        update(&window, dt) catch |err| {
-            log.err("Failed to update: {}", .{err});
-            return 1;
-        };
+        if (!game_over) {
+            update(&window, dt) catch |err| {
+                if (err == error.GameOver) {
+                    game_over = true;
+                    renderer.destroyAll();
+                    continue;
+                }
+                log.err("Failed to update: {}", .{err});
+                return 1;
+            };
 
-        renderer.renderAll(camera) catch |err| {
-            log.err("Failed to render: {}", .{err});
-            return 1;
-        };
+            renderer.renderAll(camera) catch |err| {
+                log.err("Failed to render: {}", .{err});
+                return 1;
+            };
+        } else {
+            renderer.setFontColor(Color.red);
+            renderer.renderText("Game Over", za.Vec2.new(-245, 0), 2.0, &text_shader) catch |err| {
+                log.err("Failed to render text: {}", .{err});
+                return 1;
+            };
+        }
 
         window.swapBuffers();
         Window.pollEvents();
