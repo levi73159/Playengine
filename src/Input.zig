@@ -131,7 +131,7 @@ pub const Key = enum(i32) {
     menu = glfw.KeyMenu,
 };
 
-pub const MouseButton = enum(u32) {
+pub const MouseButton = enum(i32) {
     left = glfw.MouseButtonLeft,
     right = glfw.MouseButtonRight,
     middle = glfw.MouseButtonMiddle,
@@ -194,7 +194,7 @@ pub fn getMousePos(self: Self) za.Vec2 {
     var x: f64 = undefined;
     var y: f64 = undefined;
     glfw.getCursorPos(self.handle, &x, &y);
-    return .{ .x = @floatCast(x), .y = @floatCast(y) };
+    return za.Vec2.new(@floatCast(x), @floatCast(y));
 }
 
 pub fn setMousePos(self: Self, pos: za.Vec2) void {
@@ -203,4 +203,42 @@ pub fn setMousePos(self: Self, pos: za.Vec2) void {
 
 pub fn setMouseVisible(self: Self, visible: bool) void {
     glfw.setInputMode(self.handle, glfw.Cursor, @intFromBool(visible));
+}
+
+pub fn getAxis(self: Self, left: Key, right: Key) f32 {
+    const left_action = glfw.getKey(self.handle, @intFromEnum(left));
+    const right_action = glfw.getKey(self.handle, @intFromEnum(right));
+
+    var axis: f32 = 0.0;
+    if (left_action == glfw.Press) {
+        axis -= 1.0;
+    }
+    if (right_action == glfw.Press) {
+        axis += 1.0;
+    }
+    return axis;
+}
+
+pub fn getVector(self: Self, up: Key, down: Key, left: Key, right: Key) za.Vec2 {
+    const up_action = glfw.getKey(self.handle, @intFromEnum(up));
+    const down_action = glfw.getKey(self.handle, @intFromEnum(down));
+    const left_action = glfw.getKey(self.handle, @intFromEnum(left));
+    const right_action = glfw.getKey(self.handle, @intFromEnum(right));
+
+    var x: f32 = 0;
+    var y: f32 = 0;
+
+    if (up_action == glfw.Press) {
+        y += 1.0;
+    }
+    if (down_action == glfw.Press) {
+        y -= 1.0;
+    }
+    if (left_action == glfw.Press) {
+        x -= 1.0;
+    }
+    if (right_action == glfw.Press) {
+        x += 1.0;
+    }
+    return za.Vec2.new(x, y);
 }

@@ -1,6 +1,7 @@
 const za = @import("zalgebra");
 const Transform = @import("Transform.zig");
 
+const Circle = @import("CircleBounds.zig");
 const Self = @This();
 
 x: f32,

@@ -1,6 +1,6 @@
 const std = @import("std");
 const buf = @import("buffer.zig");
-const Bounds = @import("Bounds.zig");
+const Rect = @import("bounds.zig").RectBounds;
 const renderer = @import("renderer.zig");
 const Shader = @import("Shader.zig");
 const za = @import("zalgebra");
@@ -10,6 +10,15 @@ const Texture = @import("Texture.zig");
 const Transform = @import("Transform.zig");
 
 const Self = @This();
+
+const MoveData = struct {
+    speed: f32,
+    direction: za.Vec2,
+};
+
+const DataType = union(enum) {
+    move_data: MoveData,
+};
 
 name: []const u8,
 id: u32, // vertex_array index
@@ -30,6 +39,8 @@ static: bool = false, // whether the object is owned by the renderer or owned by
 zindex: u32 = 0,
 visible: bool = true,
 
+data: ?DataType = null, // extra data for the object
+
 pub fn deinit(self: *Self) void {
     self.uniforms.deinit(self.allocator);
 
@@ -38,8 +49,9 @@ pub fn deinit(self: *Self) void {
     self.index_buffer.deinit();
 }
 
-pub fn getBounds(self: *const Self) Bounds {
-    return Bounds.fromTransform(self.transform);
+// return the rect bounds
+pub fn getBounds(self: *const Self) Rect {
+    return Rect.fromTransform(self.transform);
 }
 
 pub inline fn createSquare(name: []const u8, shader: *Shader) !*Self {

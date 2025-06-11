@@ -4,7 +4,7 @@ const core = @import("core.zig");
 const za = @import("zalgebra");
 
 const Input = @import("Input.zig");
-const Bounds = @import("Bounds.zig");
+const Rect = @import("bounds.zig").RectBounds;
 
 const Self = @This();
 
@@ -110,8 +110,8 @@ pub fn setShouldClose(self: Self, value: bool) void {
     glfw.setWindowShouldClose(self.handle, value);
 }
 
-pub fn getBounds(self: Self) Bounds {
-    return Bounds.init(0.0, 0.0, @floatFromInt(self.info.width), @floatFromInt(self.info.height));
+pub fn getBounds(self: Self) Rect {
+    return Rect.init(0.0, 0.0, @floatFromInt(self.info.width), @floatFromInt(self.info.height));
 }
 
 const FrameBufferSizeFn = *const fn (width: u32, height: u32) void;
@@ -136,4 +136,16 @@ fn framebufferSizeCallback(window: *glfw.Window, width: i32, height: i32) callco
     if (frameBufferSize_callback) |cb| {
         cb(@intCast(width), @intCast(height));
     }
+}
+
+pub fn screenToWorld(self: Self, vec: za.Vec2) za.Vec2 {
+    // convert screen (orgin at top left) to world (origin in center)
+    // need to flip y because +y is up and -y is down in the game engine but in windows +y is down because of the origin
+    // to convert this we subtract the vector by half the width and height
+    // then we flip the y by multiplying by (1, -1) to flip y
+    const fwidth: f32 = @floatFromInt(self.info.width);
+    const fheight: f32 = @floatFromInt(self.info.height);
+    const unflipped = vec.sub(za.Vec2.new(fwidth / 2.0, fheight / 2.0));
+
+    return unflipped.mul(za.Vec2.new(1.0, -1.0)); // flip y
 }

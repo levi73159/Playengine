@@ -10,7 +10,7 @@ const Object = @import("Object.zig");
 const Shader = @import("Shader.zig");
 const Window = @import("Window.zig");
 const Camera = @import("Camera.zig");
-const Bounds = @import("Bounds.zig");
+const Rect = @import("bounds.zig").RectBounds;
 const Transform = @import("Transform.zig");
 
 const Text = @import("Text.zig");
@@ -31,6 +31,13 @@ pub const RenderObject = union(enum) {
         switch (self) {
             .text => |t| a.destroy(t),
             .object => |o| a.destroy(o),
+        }
+    }
+
+    pub fn getPointerAddress(self: RenderObject) usize {
+        switch (self) {
+            .text => |t| return @intFromPtr(t),
+            .object => |o| return @intFromPtr(o),
         }
     }
 
@@ -246,6 +253,21 @@ pub fn findObjectsLimited(objbuf: []RenderObject, name: []const u8, limit: u32) 
     return i;
 }
 
+pub fn destroyObject(o: RenderObject) void {
+    var destroy_index: usize = 0;
+    for (active_objects.items, 0..) |obj, i| {
+        if (std.meta.activeTag(obj) != std.meta.activeTag(o)) continue;
+        if (obj.getPointerAddress() != o.getPointerAddress()) continue;
+
+        destroy_index = i;
+        break;
+    }
+
+    const item = active_objects.orderedRemove(destroy_index);
+    item.deinit();
+    item.destroy(allocator);
+}
+
 pub fn setFont(f: *const Font) void {
     text_settings.font = f;
 }
@@ -347,7 +369,6 @@ pub fn renderText(text: []const u8, pos: za.Vec2, scale: f32, shader: *Shader) !
 // must bind the vertex buffer and vertex array we using
 fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void {
     const vertex_buffer = Text.getBuffer();
-    std.log.debug("Rendering text: {s}", .{text});
 
     var x_offset: f32 = 0;
     var y_offset: f32 = 0;
@@ -373,7 +394,7 @@ fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void
             const w = @as(f32, @floatFromInt(char.size[0])) * scale;
             const h = @as(f32, @floatFromInt(char.size[1])) * scale;
 
-            const bounds = Bounds{
+            const bounds = Rect{
                 .x = xpos + pos.x(),
                 .y = ypos + pos.y(),
                 .width = w,
