@@ -3,6 +3,7 @@ const Self = @This();
 
 const gl = @import("gl");
 const zigimg = @import("zigimg");
+const za = @import("zalgebra");
 
 id: u32,
 path: []const u8, // more for debugging
@@ -67,4 +68,8 @@ pub fn bind(self: *Self, slot: u32) void {
 
 pub fn unbind() void {
     gl.BindTexture(gl.TEXTURE_2D, 0);
+}
+
+pub fn size(self: *Self) za.Vec2 {
+    return za.Vec2.new(@floatFromInt(self.width), @floatFromInt(self.height));
 }

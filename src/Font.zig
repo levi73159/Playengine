@@ -27,12 +27,15 @@ const FontError = error{
     OutOfMemory,
 };
 
-pub fn init(allocator: std.mem.Allocator, path: [:0]const u8, size: u32) FontError!Self {
+pub fn init(allocator: std.mem.Allocator, path: []const u8, size: u32) FontError!Self {
     const ft: c.FT_Library = try FT_LibInit();
     defer _ = c.FT_Done_FreeType(ft);
 
+    const pathZ = try allocator.dupeZ(u8, path);
+    defer allocator.free(pathZ);
+
     var face: c.FT_Face = undefined;
-    if (c.FT_New_Face(ft, path.ptr, 0, @ptrCast(&face)) != 0) {
+    if (c.FT_New_Face(ft, pathZ.ptr, 0, @ptrCast(&face)) != 0) {
         return error.FailedToLoadFont;
     }
     defer _ = c.FT_Done_Face(face);

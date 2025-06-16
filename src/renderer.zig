@@ -27,10 +27,23 @@ pub const RenderObject = union(enum) {
         }
     }
 
+    pub fn forceDeinit(self: RenderObject) void {
+        switch (self) {
+            .text => {}, // text doesn't need deinit
+            .object => |o| o.forceDeinit(),
+        }
+    }
+
     pub fn destroy(self: RenderObject, a: std.mem.Allocator) void {
         switch (self) {
-            .text => |t| a.destroy(t),
-            .object => |o| a.destroy(o),
+            .text => |t| {
+                if (t.do_not_destroy) return;
+                a.destroy(t);
+            },
+            .object => |o| {
+                if (o.do_not_destroy) return;
+                a.destroy(o);
+            },
         }
     }
 
@@ -216,6 +229,16 @@ pub fn addText(t: Text) !void {
     sorted = false;
 }
 
+pub fn addObjectPtr(ptr: *Object) !void {
+    try active_objects.append(allocator, RenderObject{ .object = ptr });
+    sorted = false;
+}
+
+pub fn addTextPtr(ptr: *Text) !void {
+    try active_objects.append(allocator, RenderObject{ .text = ptr });
+    sorted = false;
+}
+
 pub fn getObject(index: usize) RenderObject {
     return &active_objects.items[index];
 }
@@ -284,6 +307,14 @@ pub fn setFontColor(color: Color) void {
     text_settings.color = color;
 }
 
+pub fn getFont() ?*const Font {
+    return text_settings.font;
+}
+
+pub fn getFontColor() Color {
+    return text_settings.color;
+}
+
 pub fn renderAll(camera: Camera) !void {
     if (active_objects.items.len == 0) return;
     sortObjects(); // based on zindex
@@ -299,13 +330,16 @@ pub fn renderAll(camera: Camera) !void {
 pub fn renderTextObject(text: *const Text, camera: Camera) !void {
     if (!text.canBeRendered()) return;
 
+    const bounds = text.getBounds();
+    const actual_pos = za.Vec2.new(bounds.x, bounds.y).add(text.transform.pos);
+
     const mvp = if (text.world_space)
         renderer_window.getProj()
             .mul(camera.getMat4())
-            .mul(za.Mat4.fromTranslate(text.transform.pos.toVec3(0)))
+            .mul(za.Mat4.fromTranslate(actual_pos.toVec3(0)))
     else
         renderer_window.getProj()
-            .mul(za.Mat4.fromTranslate(text.transform.pos.toVec3(0)));
+            .mul(za.Mat4.fromTranslate(actual_pos.toVec3(0)));
 
     try Text.getReadyForRendering(); // active texture and binds vertex array
 
@@ -362,7 +396,9 @@ pub fn renderText(text: []const u8, pos: za.Vec2, scale: f32, shader: *Shader) !
         return;
     };
 
-    const mvp = renderer_window.getProj().mul(za.Mat4.fromTranslate(pos.toVec3(0)));
+    const text_bounds = Text.getBoundsFromText(text, scale, font);
+    const actual_pos = za.Vec2.new(text_bounds.x, text_bounds.y).add(pos);
+    const mvp = renderer_window.getProj().mul(za.Mat4.fromTranslate(actual_pos.toVec3(0)));
 
     try Text.getReadyForRendering();
 
@@ -380,6 +416,8 @@ fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void
 
     var x_offset: f32 = 0;
     var y_offset: f32 = 0;
+
+    var line_height: f32 = 0;
     for (text) |c| {
         const char = font.getCharacter(c) orelse {
             std.log.warn("Failed to get character: {c}", .{c});
@@ -387,7 +425,8 @@ fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void
         };
 
         if (c == '\n') {
-            y_offset -= @as(f32, @floatFromInt(char.size[1])) * 1.3 * scale;
+            y_offset -= line_height + 10; // 30 px line spacing
+            line_height = 0;
             x_offset = 0;
         } else if (c == ' ') {
             x_offset += @as(f32, @floatFromInt(char.advance >> 6)) * scale;
@@ -401,6 +440,8 @@ fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void
 
             const w = @as(f32, @floatFromInt(char.size[0])) * scale;
             const h = @as(f32, @floatFromInt(char.size[1])) * scale;
+
+            line_height = @max(line_height, h);
 
             const bounds = Rect{
                 .x = xpos + pos.x(),
@@ -428,14 +469,27 @@ fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void
     }
 }
 
+fn makeObjectValid(obj: Object) !*Object {
+    const ptr = try allocator.create(Object);
+    ptr.* = obj;
+    return ptr;
+}
+
+fn makeTextValid(text: Text) !*Text {
+    const ptr = try allocator.create(Text);
+    ptr.* = text;
+    return ptr;
+}
+
 /// creates a basic square and add it to the active objects
-pub fn createSquare(name: []const u8, shader: *Shader) !*Object {
+/// the `add` parameter will add the object to the active objects if true
+pub fn createSquare(name: []const u8, shader: *Shader, add: bool) !*Object {
     if (textured_square_object) |o| {
         var cloned = try o.clone();
         cloned.name = name;
-        const index = active_objects.items.len;
-        try addObject(cloned);
-        return active_objects.items[index].object;
+        const ptr = try makeObjectValid(cloned);
+        if (add) try addObjectPtr(ptr);
+        return ptr;
     }
     // zig fmt: off
     // square: xy, texture coords
@@ -469,19 +523,19 @@ pub fn createSquare(name: []const u8, shader: *Shader) !*Object {
         .static = true,
         .allocator = allocator,
     };
-    const index = active_objects.items.len;
-    try addObject(textured_square_object.?);
-    return active_objects.items[index].object;
+    const ptr = try makeObjectValid(textured_square_object.?);
+    if (add) try addObjectPtr(ptr);
+    return ptr;
 }
 
 // creates basic square and adds it to the active objects
-pub fn createBasicSquare(name: []const u8, shader: *Shader) !*Object {
+pub fn createBasicSquare(name: []const u8, shader: *Shader, add: bool) !*Object {
     if (colored_square_object) |o| {
         var cloned = try o.clone();
         cloned.name = name;
-        const index = active_objects.items.len;
-        try addObject(cloned);
-        return active_objects.items[index].object;
+        const ptr = try makeObjectValid(cloned);
+        if (add) try addObjectPtr(ptr);
+        return ptr;
     }
     // zig fmt: off
     // square: xy
@@ -514,18 +568,18 @@ pub fn createBasicSquare(name: []const u8, shader: *Shader) !*Object {
         .static = true,
         .allocator = allocator,
     };
-    const index = active_objects.items.len;
-    try addObject(colored_square_object.?);
-    return active_objects.items[index].object;
+    const ptr = try makeObjectValid(colored_square_object.?);
+    if (add) try addObjectPtr(ptr);
+    return ptr;
 }
 
-pub fn createText(name: []const u8, text: []const u8, shader: *Shader, font: *const Font) !*Text {
-    const index = active_objects.items.len;
-    try addText(Text{
+pub fn createText(name: []const u8, text: []const u8, shader: *Shader, font: *const Font, add: bool) !*Text {
+    const ptr = try makeTextValid(Text{
         .name = name,
         .text = text,
         .shader = shader,
         .font = font,
     });
-    return active_objects.items[index].text;
+    if (add) try addTextPtr(ptr);
+    return ptr;
 }

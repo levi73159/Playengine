@@ -6,6 +6,7 @@ const za = @import("zalgebra");
 const Self = @This();
 
 handle: *glfw.Window,
+current_cursor: ?*glfw.CursorHandle = null,
 
 pub const Key = enum(i32) {
     unknown = glfw.KeyUnknown,
@@ -150,10 +151,25 @@ pub const Action = enum(u32) {
     repeat = glfw.Repeat,
 };
 
+pub const CursorShape = enum(i32) {
+    default = glfw.DontCare, //
+    arrow = glfw.Arrow,
+    ibeam = glfw.IBeam,
+    crosshair = glfw.Crosshair,
+    hand = glfw.Hand,
+    hresize = glfw.HResize,
+    vresize = glfw.VResize,
+};
+
 pub fn init(handle: *glfw.Window) Self {
     return Self{
         .handle = handle,
     };
+}
+
+pub fn deinit(self: Self) void {
+    glfw.setCursor(self.handle, null); // destroy current cursor
+    glfw.destroyCursor(self.current_cursor);
 }
 
 pub fn getKey(self: Self, key: Key) Action {
@@ -203,6 +219,18 @@ pub fn setMousePos(self: Self, pos: za.Vec2) void {
 
 pub fn setMouseVisible(self: Self, visible: bool) void {
     glfw.setInputMode(self.handle, glfw.Cursor, @intFromBool(visible));
+}
+
+pub fn setCursorShape(self: *Self, shape: CursorShape) void {
+    glfw.destroyCursor(self.current_cursor);
+    if (shape == .default) {
+        self.current_cursor = null;
+        glfw.setCursor(self.handle, null);
+    } else {
+        const cursor = glfw.createStandardCursor(@intFromEnum(shape));
+        self.current_cursor = cursor;
+        glfw.setCursor(self.handle, cursor);
+    }
 }
 
 pub fn getAxis(self: Self, left: Key, right: Key) f32 {

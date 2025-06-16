@@ -36,17 +36,28 @@ allocator: std.mem.Allocator,
 
 // render state
 static: bool = false, // whether the object is owned by the renderer or owned by someone else
-zindex: u32 = 0,
+zindex: i32 = 0,
 visible: bool = true,
+do_not_destroy: bool = false, // if true, the object will not be deinitialized when the renderer destroys all objects
 
 data: ?DataType = null, // extra data for the object
 
 pub fn deinit(self: *Self) void {
-    self.uniforms.deinit(self.allocator);
+    if (self.do_not_destroy) return;
+    self.forceDeinit();
+}
+
+pub fn forceDeinit(self: *Self) void {
+    self.uniforms.deinit(self.allocator); // uniforms are per object even if static
 
     if (self.static) return; // owned by the renderer
     self.vertex_buffer.deinit();
     self.index_buffer.deinit();
+}
+
+pub fn deinitAndDestroy(self: *Self) void {
+    self.forceDeinit();
+    self.allocator.destroy(self);
 }
 
 // return the rect bounds
@@ -55,11 +66,19 @@ pub fn getBounds(self: *const Self) Rect {
 }
 
 pub inline fn createSquare(name: []const u8, shader: *Shader) !*Self {
-    return renderer.createSquare(name, shader); // this is a renderer function but best accessed from here
+    return renderer.createSquare(name, shader, true); // this is a renderer function but best accessed from here
 }
 
 pub inline fn createBasicSquare(name: []const u8, shader: *Shader) !*Self {
-    return renderer.createBasicSquare(name, shader); // this is a renderer function but best accessed from here
+    return renderer.createBasicSquare(name, shader, true); // this is a renderer function but best accessed from here
+}
+
+pub inline fn createSquareNoAdd(name: []const u8, shader: *Shader) !*Self {
+    return renderer.createSquare(name, shader, false);
+}
+
+pub inline fn createBasicSquareNoAdd(name: []const u8, shader: *Shader) !*Self {
+    return renderer.createBasicSquare(name, shader, false);
 }
 
 pub inline fn overlaps(self: Self, other: Self) bool {
