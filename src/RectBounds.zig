@@ -27,6 +27,15 @@ pub fn fromTransform(transform: Transform) Self {
     };
 }
 
+pub fn zero() Self {
+    return Self{
+        .x = 0.0,
+        .y = 0.0,
+        .width = 0.0,
+        .height = 0.0,
+    };
+}
+
 pub fn left(self: Self) f32 {
     return (-self.width / 2.0) + self.x;
 }

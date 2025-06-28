@@ -16,58 +16,9 @@ const Transform = @import("Transform.zig");
 const Text = @import("Text.zig");
 const Font = @import("Font.zig");
 
-pub const RenderObject = union(enum) {
-    text: *Text,
-    object: *Object,
+pub const RenderObject = @import("rendererObjects.zig").RenderObject;
 
-    pub fn deinit(self: RenderObject) void {
-        switch (self) {
-            .text => {}, // text doesn't need deinit
-            .object => |o| o.deinit(),
-        }
-    }
-
-    pub fn forceDeinit(self: RenderObject) void {
-        switch (self) {
-            .text => {}, // text doesn't need deinit
-            .object => |o| o.forceDeinit(),
-        }
-    }
-
-    pub fn destroy(self: RenderObject, a: std.mem.Allocator) void {
-        switch (self) {
-            .text => |t| {
-                if (t.do_not_destroy) return;
-                a.destroy(t);
-            },
-            .object => |o| {
-                if (o.do_not_destroy) return;
-                a.destroy(o);
-            },
-        }
-    }
-
-    pub fn getPointerAddress(self: RenderObject) usize {
-        switch (self) {
-            .text => |t| return @intFromPtr(t),
-            .object => |o| return @intFromPtr(o),
-        }
-    }
-
-    pub fn getName(self: RenderObject) []const u8 {
-        switch (self) {
-            .text => |t| return t.text,
-            .object => |o| return o.name,
-        }
-    }
-
-    pub fn getTransform(self: RenderObject) *Transform {
-        switch (self) {
-            .text => |t| return &t.transform,
-            .object => |o| return &o.transform,
-        }
-    }
-};
+const log = std.log.scoped(.renderer);
 
 var procs: gl.ProcTable = undefined;
 var renderer_window: *const Window = undefined;
@@ -81,6 +32,10 @@ var colored_square_object: ?Object = null; // predefined only when createSquare 
 
 var active_objects: std.ArrayListUnmanaged(RenderObject) = .{};
 var sorted: bool = false;
+
+pub var deleted_objects: std.ArrayListUnmanaged(RenderObject) = .{}; // objects that are deleted but have the do_not_destroy flag
+
+var default_clear_color: Color = Color.black;
 
 var text_settings: struct {
     font: ?*const Font = null,
@@ -149,20 +104,39 @@ pub fn deinit() void {
     }
     vertex_arrays.deinit(allocator);
 
+    // since it the end of the renderer, we need to deinit all objects
     for (active_objects.items) |o| {
-        o.deinit();
-        o.destroy(allocator);
+        o.forceDeinit();
+        o.forceDestroy(allocator);
     }
     active_objects.deinit(allocator);
 
-    if (textured_square_object) |*o| o.deinit();
-    if (colored_square_object) |*o| o.deinit();
+    if (deleted_objects.items.len != 0) {
+        log.warn("there are still some unhandled deleted objects... destroying them", .{});
+        for (deleted_objects.items) |o| {
+            o.forceDeinit();
+            o.forceDestroy(allocator);
+        }
+    }
+    deleted_objects.deinit(allocator);
+
+    if (textured_square_object) |*o| o.staticDeinit(true);
+    if (colored_square_object) |*o| o.staticDeinit(true);
 }
 
 /// function to be called at the end of the program
 /// will deinit all resourced used but not in the renderer
 pub fn deinitResources() void {
     Text.deinitResources();
+}
+
+// if you want to change the default window and not call the init function yet
+pub fn setDefaultWindow(window: *const Window) void {
+    renderer_window = window;
+}
+
+pub fn getDefaultWindow() *const Window {
+    return renderer_window;
 }
 
 pub fn createVertexArray(layout: buffer.BufferLayout.Layout) !u32 {
@@ -186,6 +160,14 @@ fn framebufferSizeCallback(width: u32, height: u32) void {
 pub fn clear(color: Color) void {
     gl.ClearColor(color.r, color.g, color.b, color.a);
     gl.Clear(gl.COLOR_BUFFER_BIT);
+}
+
+pub inline fn clearDefault() void {
+    clear(default_clear_color);
+}
+
+pub inline fn setClearColor(color: Color) void {
+    default_clear_color = color;
 }
 
 fn lessThen(_: void, a: RenderObject, b: RenderObject) bool {
@@ -250,6 +232,16 @@ pub fn findObject(name: []const u8) ?RenderObject {
     return null;
 }
 
+// wrappers
+pub inline fn findGameObject(name: []const u8) ?*Object {
+    return (findObject(name) orelse return null).object;
+}
+
+// wrappers
+pub inline fn findText(name: []const u8) ?*Text {
+    return (findObject(name) orelse return null).text;
+}
+
 // if you want to find all objects with a certain name
 // does not return pointers, if you want to have them return pointers use findObjectsMut
 pub fn findObjects(objbuf: []RenderObject, name: []const u8) []RenderObject {
@@ -287,14 +279,22 @@ pub fn destroyObject(o: RenderObject) void {
     }
 
     const item = active_objects.orderedRemove(destroy_index);
-    item.deinit();
-    item.destroy(allocator);
+    if (item.getDoNotDestroy()) {
+        deleted_objects.append(allocator, item) catch unreachable;
+    } else {
+        item.deinit();
+        item.destroy(allocator);
+    }
 }
 
 pub fn destroyAll() void {
     for (active_objects.items) |o| {
-        o.deinit();
-        o.destroy(allocator);
+        if (o.getDoNotDestroy()) {
+            deleted_objects.append(allocator, o) catch unreachable;
+        } else {
+            o.deinit();
+            o.destroy(allocator);
+        }
     }
     active_objects.clearAndFree(allocator);
 }
@@ -392,7 +392,7 @@ pub fn renderText(text: []const u8, pos: za.Vec2, scale: f32, shader: *Shader) !
     if (scale == 0) return;
 
     const font = text_settings.font orelse {
-        std.log.warn("No font set", .{});
+        log.warn("No font set", .{});
         return;
     };
 
@@ -420,7 +420,7 @@ fn drawText(text: []const u8, font: *const Font, scale: f32, pos: za.Vec2) !void
     var line_height: f32 = 0;
     for (text) |c| {
         const char = font.getCharacter(c) orelse {
-            std.log.warn("Failed to get character: {c}", .{c});
+            log.warn("Failed to get character: {c}", .{c});
             continue;
         };
 
@@ -582,4 +582,12 @@ pub fn createText(name: []const u8, text: []const u8, shader: *Shader, font: *co
     });
     if (add) try addTextPtr(ptr);
     return ptr;
+}
+
+pub fn getActiveObjects() []const RenderObject {
+    return active_objects.items;
+}
+
+pub fn cloneActiveObjects() !std.ArrayList(RenderObject) {
+    return active_objects.toManaged(allocator).clone();
 }

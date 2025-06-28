@@ -79,6 +79,12 @@ pub fn init(allocator: std.mem.Allocator, vertex_src: []const u8, fragment_src: 
     };
 }
 
+pub fn initFromPath(allocator: std.mem.Allocator, comptime path: []const u8) !Self {
+    const vertex_src = @embedFile(path ++ ".vert");
+    const fragment_src = @embedFile(path ++ ".frag");
+    return Self.init(allocator, vertex_src, fragment_src);
+}
+
 // creates a new shader that is a basic textured shader with u_MVP and u_Texture and u_Color
 pub fn getTexturedShader(allocator: std.mem.Allocator) !Self {
     const vertex_src = @embedFile("shaders/textured.vert");

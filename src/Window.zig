@@ -12,6 +12,11 @@ var glfw_initialized: bool = false;
 
 const log = std.log.scoped(.window);
 
+pub const Size = struct {
+    width: u32,
+    height: u32,
+};
+
 pub const Info = struct {
     title: [:0]const u8,
     width: u32,
@@ -30,6 +35,7 @@ pub const WindowParams = struct {
 info: *Info,
 handle: *glfw.Window,
 allocator: std.mem.Allocator,
+expected_size: Size,
 
 fn calcProj(width: u32, height: u32) za.Mat4 {
     const fwidth: f32 = @floatFromInt(width);
@@ -44,9 +50,13 @@ fn glfwErrorCallback(error_code: glfw.ErrorCode, description: [*:0]const u8) cal
 fn glfwInit() !void {
     if (glfw_initialized) return;
     try glfw.init();
+
+    glfw.defaultWindowHints();
     glfw.windowHint(glfw.ContextVersionMajor, 4);
     glfw.windowHint(glfw.ContextVersionMinor, 6);
     glfw.windowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile);
+    glfw.windowHint(glfw.Samples, 32); // MSAA
+
     _ = glfw.setErrorCallback(&glfwErrorCallback);
 
     glfw_initialized = true;
@@ -56,24 +66,35 @@ pub fn init(allocator: std.mem.Allocator, params: WindowParams) !Self {
     try glfwInit();
 
     glfw.windowHint(glfw.Resizable, @intFromBool(params.resizable));
+    const monitor = glfw.getPrimaryMonitor();
 
-    const handle = try glfw.createWindow(@intCast(params.width), @intCast(params.height), params.title, null, null);
+    const handle = try glfw.createWindow(@intCast(params.width), @intCast(params.height), params.title, monitor, null);
     if (params.current) glfw.makeContextCurrent(handle);
+
+    var width: i32 = undefined;
+    var height: i32 = undefined;
+    glfw.getMonitorWorkarea(monitor, null, null, &width, &height);
 
     const info = try allocator.create(Info);
     info.* = .{
         .title = params.title,
-        .width = params.width,
-        .height = params.height,
-        .proj = calcProj(@intCast(params.width), @intCast(params.height)),
+        .width = @intCast(width),
+        .height = @intCast(height),
+        .proj = calcProj(@intCast(width), @intCast(height)),
     };
 
     glfw.setWindowUserPointer(handle, info);
     _ = glfw.setFramebufferSizeCallback(handle, &framebufferSizeCallback);
+    _ = glfw.setWindowCloseCallback(handle, &windowCloseCallback);
+
     return Self{
         .info = info,
         .handle = handle,
         .allocator = allocator,
+        .expected_size = .{
+            .width = params.width,
+            .height = params.height,
+        },
     };
 }
 
@@ -114,11 +135,30 @@ pub fn getBounds(self: Self) Rect {
     return Rect.init(0.0, 0.0, @floatFromInt(self.info.width), @floatFromInt(self.info.height));
 }
 
+pub fn getFrameBufferSize(self: Self) Size {
+    var fb_width: i32 = 0;
+    var fb_height: i32 = 0;
+    glfw.getFramebufferSize(self.handle, &fb_width, &fb_height);
+    return Size{ .width = @intCast(fb_width), .height = @intCast(fb_height) };
+}
+
+pub fn getDrawableBounds(self: Self) Rect {
+    const fb = self.getFrameBufferSize();
+    return Rect.init(0.0, 0.0, @floatFromInt(fb.width), @floatFromInt(fb.height));
+}
+
 const FrameBufferSizeFn = *const fn (width: u32, height: u32) void;
 var frameBufferSize_callback: ?FrameBufferSizeFn = null;
 
+const OnCloseFn = *const fn () void;
+var onClose_callback: ?*const fn () void = null;
+
 pub fn registerFrameBufferSizeCallback(cb: FrameBufferSizeFn) void {
     frameBufferSize_callback = cb;
+}
+
+pub fn registerWindowCloseCallback(cb: OnCloseFn) void {
+    onClose_callback = cb;
 }
 
 fn framebufferSizeCallback(window: *glfw.Window, width: i32, height: i32) callconv(.c) void {
@@ -135,6 +175,12 @@ fn framebufferSizeCallback(window: *glfw.Window, width: i32, height: i32) callco
 
     if (frameBufferSize_callback) |cb| {
         cb(@intCast(width), @intCast(height));
+    }
+}
+
+fn windowCloseCallback(_: *glfw.Window) callconv(.c) void {
+    if (onClose_callback) |cb| {
+        cb();
     }
 }
 

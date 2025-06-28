@@ -47,10 +47,6 @@ pub fn start(_: *const Engine) anyerror!void {
     renderer.setFont(font);
 
     try assets.preloadTexture("BackgroundTexture", "res/sprites/Background_game.png", 0);
-    try assets.preloadTexture("PlayerTexture", "res/sprites/player.png", 1);
-    try assets.preloadTexture("EnemyTexture", "res/sprites/enemy.png", 2);
-    try assets.preloadTexture("BulletTexture", "res/sprites/bullet.png", 3);
-    try assets.preloadTexture("DeathBackgroundTexture", "res/sprites/death_background.png", 0);
 }
 
 pub fn main() !u8 {

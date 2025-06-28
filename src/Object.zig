@@ -55,6 +55,19 @@ pub fn forceDeinit(self: *Self) void {
     self.index_buffer.deinit();
 }
 
+pub fn staticDeinit(self: *Self, deinit_data: bool) void {
+    if (!self.static) {
+        std.log.warn("Attempting to call staticDeinit on a non-static object", .{});
+    }
+
+    if (deinit_data) {
+        self.uniforms.deinit(self.allocator);
+    }
+
+    self.vertex_buffer.deinit();
+    self.index_buffer.deinit();
+}
+
 pub fn deinitAndDestroy(self: *Self) void {
     self.forceDeinit();
     self.allocator.destroy(self);
